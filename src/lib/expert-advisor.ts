@@ -217,9 +217,9 @@ export class ExpertAdvisor {
         throw new Error(`持仓:${JSON.stringify(position)},卖出信号出错`);
       }
       Log.system.info(`获取持仓:${JSON.stringify(position)}`);
-      Log.system.info(`信号股价(${singal.price}) > 当前股价(${price}) && 盈利超过500(${price} - ${position.price} > 5)`);
-      // 信号出现时股价 > 当前股价(股价下跌) && 并且盈利超过500
-      if (singal.price > price && price - position.price > 5) {
+      Log.system.info(`信号股价(${singal.price}) > 当前股价(${price}) && 盈利超过500(${price} - ${position.price} > 10)`);
+      // 信号出现时股价 > 当前股价(股价下跌) && 并且盈利超过1000
+      if (singal.price > price && price - position.price > 10) {
         Log.system.info('卖出信号出现后,股价下跌,立即卖出', price);
         const order = <types.LimitOrder>Object.assign({}, this.trader.order, {
           side: types.OrderSide.Sell,

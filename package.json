@@ -10,6 +10,7 @@
   "main": "dist/index.js",
   "typings": "dist/index.d.ts",
   "scripts": {
+    "start": "node dist/index.js",
     "rm": "rimraf dist",
     "wdserv": "selenium-standalone start",
     "tsc": "npm run rm && tsc -p tsconfig.development.json",

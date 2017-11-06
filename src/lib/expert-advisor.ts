@@ -11,7 +11,7 @@ const Loki = require('lokijs');
 
 export class ExpertAdvisor {
   symbol: string;
-  account: { id: string, balance: number };
+  account: types.Model.Account;
   backtest: {
     test: boolean,
     isLastDate: string,
@@ -41,7 +41,7 @@ export class ExpertAdvisor {
     this.interval = this.backtest.test ? this.backtest.interval : config.ea.interval;
     this.manager = new Manager();
     this.trader = new Trader(config);
-    this.account = { id: config.account.userId, balance: 0 };
+    this.account = { id: config.account.userId };
     this.dataProvider = new DataProvider(config.store);
   }
 
@@ -53,18 +53,21 @@ export class ExpertAdvisor {
 
   async start() {
     await this.dataProvider.init()
-    // 更新余额
-    await this.updBalance();
+    // 更新资产
+    await this.updAsset();
     if (this.account.balance === 0) {
       Log.system.warn(`账户：${this.account.id},可用余额：0,不执行EA程序！`);
       return;
     }
-    setInterval(this.onPretrade, this.interval);
+    setInterval(this.onPretrade.bind(this), this.interval);
     await this.trader.init();
   }
 
-  async updBalance() {
-    this.account.balance = await this.manager.asset.getBalance(this.account.id);
+  async updAsset() {
+    const res = await this.manager.asset.get(this.account.id);
+    if (res) {
+      this.account = res;
+    }
   }
 
   async _getTest5minData(symbol: string): Promise<types.Bar[]> {
@@ -88,22 +91,32 @@ export class ExpertAdvisor {
   }
 
   async getTest5minData(symbol: string): Promise<types.Bar[]> {
-    const hisData: types.Bar[] = await this._getTest5minData(symbol);
-    if (hisData.length === 0) {
-      throw new Error('回测环境未获取5分钟线数据！');
-    }
     const loki = this.backtest.loki;
-    let coll = loki.getCollection(symbol);
-    if (!coll) {
-      coll = loki.addCollection(symbol);
-      // 插入第一条数据
-      // TODO coll.insert(hisData[0]);
-      coll.insert(hisData.slice(0, 15));
+    const inCollName = 'i_' + symbol;
+
+    let inColl = loki.getCollection(inCollName);
+    let hisData: types.Bar[] = [];
+    // 股票输入表为空时，通过接口获取数据
+    if (!inColl) {
+      hisData = await this._getTest5minData(symbol);
+      if (hisData.length === 0) {
+        throw new Error('回测环境未获取5分钟线数据！');
+      }
+      inColl = loki.addCollection(inCollName);
+      inColl.insert(JSON.parse(JSON.stringify(hisData)));
     } else {
-      // 插入下一条数据
-      coll.insert(hisData[coll.find().length]);
+      hisData = inColl.chain().find().data({ removeMeta: true });
     }
-    return <types.Bar[]>coll.chain().find().data({ removeMeta: true });
+    // 取出数据导入输出表
+    let outColl = loki.getCollection(symbol);
+    if (!outColl) {
+      outColl = loki.addCollection(symbol);
+      // 插入第一条数据
+      outColl.insert(hisData[0]);
+    } else {
+      outColl.insert(hisData[outColl.find().length]);
+    }
+    return <types.Bar[]>outColl.chain().find().data({ removeMeta: true });
   }
 
   async get5minData(symbol: string): Promise<types.Bar[]> {
@@ -167,6 +180,7 @@ export class ExpertAdvisor {
     Log.system.info('处理信号[启动]');
     const price: number = numeral(hisData[hisData.length - 1].close).value();
     const time = moment.unix((<number>hisData[hisData.length - 1].time) / 1000).format('YYYY-MM-DD HH:mm:ss');
+    Log.system.info(`symbol：${symbol}, price：${price}, time：${time}`);
     // 买入信号
     if (singal.side === types.OrderSide.Buy) {
       Log.system.info('买入信号');
@@ -187,8 +201,8 @@ export class ExpertAdvisor {
         await this.manager.trader.set(this.account, order);
         // 消除信号
         await this.manager.signal.remove(singal.id);
-        // 更新余额
-        await this.updBalance();
+        // 更新资产
+        await this.updAsset();
       } else if (singal.price > price) { // 股价继续下跌
         Log.system.info('更新买入信号股价', price);
         singal.price = price;
@@ -201,25 +215,25 @@ export class ExpertAdvisor {
       }
     } else if (singal.side === types.OrderSide.Sell) {
       Log.system.info('卖出信号');
-      const posiInput: { [Attr: string]: any } = {
-        symbol: symbol,
-        account_id: this.account.id,
-        side: types.OrderSide.Buy
-      };
-      if (this.backtest.test) {
-        posiInput.backtest = '1';
-        posiInput.mocktime = time;
+      // 查询是否有持仓
+      let position: types.Model.Position | undefined;
+      if (this.account.positions) {
+        position = this.account.positions.find((posi) => {
+          return posi.symbol === String(symbol) && posi.side === types.OrderSide.Buy;
+        })
       }
-
-      // 获取持仓
-      const position = await this.manager.position.get(<types.Model.Position>posiInput);
-      if (!position || !position.price) {
-        throw new Error(`持仓:${JSON.stringify(position)},卖出信号出错`);
+      if (!position) {
+        Log.system.warn('未查询到持仓，不进行卖出！');
+        return;
       }
       Log.system.info(`获取持仓:${JSON.stringify(position)}`);
-      Log.system.info(`信号股价(${singal.price}) > 当前股价(${price}) && 盈利超过1000(${price} - ${position.price} > 10)`);
-      // 信号出现时股价 > 当前股价(股价下跌) && 并且盈利超过1000
-      if (singal.price > price && price - position.price > 10) {
+      if (!position.price) {
+        Log.system.error('持仓股价为空！');
+        return;
+      }
+      Log.system.info(`信号股价(${singal.price}) > 当前股价(${price}) && 盈利超过700(${price} - ${position.price} > 7)`);
+      // 信号出现时股价 > 当前股价(股价下跌) && 并且盈利超过700
+      if (singal.price > price && price - position.price > 7) {
         Log.system.info('卖出信号出现后,股价下跌,立即卖出', price);
         const order = <types.LimitOrder>Object.assign({}, this.trader.order, {
           side: types.OrderSide.Sell,
@@ -235,8 +249,17 @@ export class ExpertAdvisor {
         await this.manager.trader.set(this.account, order);
         // 消除信号
         await this.manager.signal.remove(singal.id);
-        // 更新余额
-        await this.updBalance();
+        // 更新资产
+        await this.updAsset();
+      } else if (singal.price < price) { // 股价继续上涨
+        Log.system.info('更新卖出信号股价', price);
+        singal.price = price;
+        if (this.backtest.test) {
+          singal.backtest = '1';
+          singal.mocktime = time;
+        }
+        // 记录当前股价
+        await this.manager.signal.set(<types.Model.Signal>singal);
       }
     }
     Log.system.info('处理信号[终了]');
@@ -245,29 +268,33 @@ export class ExpertAdvisor {
   // 拉取信号
   async pullSingal(symbol: string, hisData: types.Bar[]) {
     Log.system.info('拉取信号[启动]');
-    // 订单价格
-    const orderPrice = numeral(hisData[hisData.length - 1].close).value() * 100 + 500;
-    Log.system.info(`订单价格:${JSON.stringify(orderPrice)}`);
-    if (this.account.balance < orderPrice) {
-      const balance = numeral(this.account.balance).format('0,0');
-      Log.system.warn(`可用余额：${balance} < 订单价格(${symbol})：${numeral(orderPrice).format('0,0')}，不拉取信号！`);
-      return;
-    }
 
     // 没有信号时，执行策略取得信号
     const singal: SniperSingal | null = SniperStrategy.execute(symbol, hisData);
     // 获得买卖信号
     if (singal && singal.side) {
       Log.system.info(`获得买卖信号：${JSON.stringify(singal)}`);
-      if (singal.side === types.OrderSide.Sell) {
-        // 查询是否有持仓
-        const position = await this.manager.position.get({
-          symbol, account_id: this.account.id,
-          side: types.OrderSide.Buy
-        });
-        if (!position) {
-          Log.system.warn('未查询到持仓，不保存卖出信号！');
+      if (singal.side === types.OrderSide.Buy) {
+        // 订单价格
+        const orderPrice = numeral(hisData[hisData.length - 1].close).value() * 100 + 500;
+        Log.system.info(`订单价格:${JSON.stringify(orderPrice)}`);
+        if (<number>this.account.balance < orderPrice) {
+          const balance = numeral(this.account.balance).format('0,0');
+          Log.system.warn(`可用余额：${balance} < 订单价格(${symbol})：${numeral(orderPrice).format('0,0')}，不拉取信号！`);
           return;
+        }
+      } else if (singal.side === types.OrderSide.Sell) {
+
+        // 查询是否有持仓
+        if (this.account.positions) {
+          const position = this.account.positions.find((posi) => {
+            return posi.symbol === String(symbol) && posi.side === types.OrderSide.Buy;
+          });
+
+          if (!position) {
+            Log.system.warn('未查询到持仓，不保存卖出信号！');
+            return;
+          }
         }
       }
       const price = hisData[hisData.length - 1].close;

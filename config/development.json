@@ -6,7 +6,7 @@
     "username": "root",
     "timezone": "+09:00",
     "operatorsAliases": false,
-    "logging": true
+    "logging": false
   },
   "account": {
     "id": "xxx",
@@ -22,16 +22,16 @@
   "strategies": {
     "sniper": {
       "sell_k": 85,
-      "buy_k": 15
+      "buy_k": 20
     }
   },
   "backtest": {
-    "test": true,
+    "test": false,
     "isLastDate": false,
     "date": "2017-11-01",
-    "interval": 1
+    "interval": 3000
   },
   "ea": {
-    "interval": 60
+    "interval": 30000
   }
 }

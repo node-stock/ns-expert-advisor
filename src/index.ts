@@ -12,8 +12,9 @@ if (Util.isTradeTime()) {
   expertAdvisor.start();
 }
 Log.system.info('注册定时EA服务程序[开始]');
-const eaTask = new Scheduler('0 9 * * *'); // */3 * * * * *
+const eaTask = new Scheduler('0 9 * * *'); // */3 * * * * * // 0 9 * * *
 eaTask.invok((ea: ExpertAdvisor) => {
+  // eaTask.reminder.cancel()
   if (!Util.isTradeDate(new Date())) {
     Log.system.info('当前非交易日，不启动EA程序');
     return;

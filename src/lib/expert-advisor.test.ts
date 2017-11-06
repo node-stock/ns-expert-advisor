@@ -26,8 +26,8 @@ const testGet5minData = async (done: () => void) => {
 }
 
 const testOnPretrade = async (done: () => void) => {
-  const hisData: types.Bar[] = await expertAdvisor._getTest5minData('6553');
-  await expertAdvisor.updBalance()
+  const hisData: types.Bar[] = await expertAdvisor._getTest5minData('6664');
+  await expertAdvisor.updAsset()
   for (let i = 0; i < hisData.length; i++) {
     await expertAdvisor.onPretrade();
   }

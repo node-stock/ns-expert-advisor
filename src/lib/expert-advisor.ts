@@ -21,6 +21,7 @@ export class ExpertAdvisor {
   };
   // 实时监测间隔
   interval: number;
+  worker: number;
   manager: Manager;
   trader: Trader;
   dataProvider: DataProvider;
@@ -46,6 +47,7 @@ export class ExpertAdvisor {
   }
 
   destroy() {
+    clearInterval(this.worker);
     this.manager.destroy();
     this.trader.end();
     this.dataProvider.close();
@@ -59,7 +61,7 @@ export class ExpertAdvisor {
       Log.system.warn(`账户：${this.account.id},可用余额：0,不执行EA程序！`);
       return;
     }
-    setInterval(this.onPretrade.bind(this), this.interval);
+    this.worker = setInterval(this.onPretrade.bind(this), this.interval);
     await this.trader.init();
   }
 
@@ -120,6 +122,7 @@ export class ExpertAdvisor {
   }
 
   async get5minData(symbol: string): Promise<types.Bar[]> {
+    Log.system.info('获取5分钟数据方法[启动]');
     if (this.backtest.test) {
       return await this.getTest5minData(symbol);
     }
@@ -130,8 +133,12 @@ export class ExpertAdvisor {
       p: '1d',
       i: 300
     });
-    // 获取当天最5分钟k线
+    Log.system.info('google获取数据：', hisData);
+    Log.system.info('len: ', hisData.length)
+    // 获取当天5分钟k线
     const barData = await this.dataProvider.getLast5minBar(symbol);
+    Log.system.info(' 获取当天5分钟k线', barData);
+    Log.system.info('len: ', barData.length);
     // 合并数据
     barData.map((bar) => {
       const res = hisData.find((his) => his.time !== bar.time);
@@ -139,6 +146,7 @@ export class ExpertAdvisor {
         hisData.push(res);
       }
     })
+    Log.system.info('获取5分钟数据方法[终了]');
     return hisData;
   }
 

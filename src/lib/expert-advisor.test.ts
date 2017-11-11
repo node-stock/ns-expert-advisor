@@ -2,9 +2,7 @@ import { ExpertAdvisor } from './expert-advisor';
 import * as assert from 'power-assert';
 import * as types from 'ns-types';
 
-const config = require('config');
-const expertAdvisor = new ExpertAdvisor(config);
-expertAdvisor.dataProvider.init();
+const expertAdvisor = new ExpertAdvisor();
 
 const testGet5minData = async (done: () => void) => {
 
@@ -27,7 +25,7 @@ const testGet5minData = async (done: () => void) => {
 
 const testOnPretrade = async (done: () => void) => {
   const hisData: types.Bar[] = await expertAdvisor._getTest5minData('6664');
-  await expertAdvisor.updAsset()
+  await expertAdvisor.updAsset();
   for (let i = 0; i < hisData.length; i++) {
     await expertAdvisor.onPretrade();
   }
@@ -41,7 +39,11 @@ describe('ExpertAdvisor测试', () => {
     testGet5minData(done);
   });*/
   it('交易测试', function (done) {
-    this.timeout(30000000);
+    this.timeout(3000000);
     testOnPretrade(done);
+  });
+  after(() => {
+    console.log('测试后处理');
+    expertAdvisor.destroy();
   });
 });

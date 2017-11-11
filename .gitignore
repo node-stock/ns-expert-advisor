@@ -58,6 +58,6 @@ typings/
 .env
 
 dist
-config/config.dev.json
+config/development.toml
 .history
 .vscode

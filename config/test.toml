@@ -1,0 +1,81 @@
+### 配置文件
+
+###
+### [store]
+###
+### 数据库连接相关配置
+###
+[store]
+  host = "127.0.0.1"
+  database = "test"
+  # 数据库类型
+  dialect = "mysql"
+  username = "root"
+  timezone = "+09:00"
+  operatorsAliases = false
+  logging = false
+###
+### [pubnub]
+###
+### 数据发布接口
+###
+[pubnub]
+  publishKey = "pub-c-4e57d322-4d66-470d-a4e0-feb12c68d816"
+  subscribeKey = "sub-c-39a094ea-a1b7-11e7-8e6b-ae1a713ba7dc"
+###
+### [account]
+###
+### 账户相关配置
+###
+[account]
+  # 实际券商账号
+  id = "xxx6"
+  # 数据库中账号
+  userId = "stoc"
+  # 登录密码
+  pass = "passx"
+  # 支付密码
+  otp = "xxxx"
+  # 长线持仓数量
+  longLen = 1
+###
+### [trader]
+###
+### trader相关配置
+###
+[trader]
+  # 测试模式时 不执行真实交易操作
+  test = true
+  # Web交易者初始化股票界面
+  symbol = 6553
+###
+### [strategies]
+###
+### 策略相关配置
+###
+[strategies]
+[strategies.sniper]
+  buy = 85
+  sell = 15
+###
+### [backtest]
+###
+### 回测相关配置
+###
+[backtest]
+  # 回测模式
+  test = false
+  # 是否回测最近一个单位的交易日
+  isLastDate = false
+  # 回测时间（isLastDate为true时不可用）
+  date = "2017-11-01"
+  # 回测间隔（秒）
+  interval = 3000
+###
+### [ea]
+###
+### 智能交易相关配置
+###
+[ea]
+  # 智能交易间隔（秒）
+  interval = 30000

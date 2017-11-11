@@ -8,6 +8,7 @@ import * as assert from 'power-assert';
 import * as numeral from 'numeral';
 import * as moment from 'moment';
 const Loki = require('lokijs');
+const config = require('config');
 
 export class ExpertAdvisor {
   symbol: string;
@@ -26,7 +27,7 @@ export class ExpertAdvisor {
   trader: Trader;
   dataProvider: DataProvider;
 
-  constructor(config: { [Attr: string]: any }) {
+  constructor() {
     assert(config, 'config required.');
     assert(config.trader, 'config.trader required.');
     assert(config.account, 'config.account required.');
@@ -35,15 +36,18 @@ export class ExpertAdvisor {
     assert(config.store, 'config.store required.');
     this.symbol = config.trader.symbol;
     this.backtest = config.backtest;
+    this.interval = this.backtest.test ? this.backtest.interval : config.ea.interval;
+    this.account = { id: config.account.userId };
+  }
+
+  connect() {
+    this.manager = new Manager();
+    this.trader = new Trader(config);
+    this.dataProvider = new DataProvider(config.store);
     // 回测模式时，启动临时中间数据库
     if (this.backtest.test) {
       this.backtest.loki = new Loki('backtest.db');
     }
-    this.interval = this.backtest.test ? this.backtest.interval : config.ea.interval;
-    this.manager = new Manager();
-    this.trader = new Trader(config);
-    this.account = { id: config.account.userId };
-    this.dataProvider = new DataProvider(config.store);
   }
 
   destroy() {
@@ -54,7 +58,7 @@ export class ExpertAdvisor {
   }
 
   async start() {
-    await this.dataProvider.init()
+    this.connect();
     // 更新资产
     await this.updAsset();
     if (this.account.balance === 0) {

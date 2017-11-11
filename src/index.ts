@@ -1,10 +1,9 @@
 import { ExpertAdvisor } from './lib/expert-advisor';
 import { Log, Util, Scheduler } from 'ns-common';
 
-const config = require('config');
 Log.init(Log.category.system, Log.level.ALL, 'ns-expert-advisor');
 
-const expertAdvisor = new ExpertAdvisor(config);
+const expertAdvisor = new ExpertAdvisor();
 
 const stopServ = (serv: ExpertAdvisor) => {
   Log.system.info('EA程序退出方法[启动]');
@@ -35,7 +34,7 @@ eaTask.invok((ea: ExpertAdvisor) => {
   }
 
   Log.system.info('定时启动EA服务');
-  expertAdvisor.start().catch((err) => {
+  expertAdvisor.start().catch((err: Error) => {
     Log.system.error(`EA服务异常：${err.stack}`);
   });
   stopServ(expertAdvisor);

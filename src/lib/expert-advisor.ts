@@ -4,6 +4,9 @@ import { SniperStrategy, SniperSingal } from 'ns-strategies';
 import * as types from 'ns-types';
 import { Manager } from 'ns-manager';
 import { WebTrader as Trader } from 'ns-trader';
+import { InfluxDB, Param } from 'ns-influxdb';
+import { IResults } from 'influx';
+
 import * as assert from 'power-assert';
 import * as numeral from 'numeral';
 import * as moment from 'moment';
@@ -26,6 +29,7 @@ export class ExpertAdvisor {
   manager: Manager;
   trader: Trader;
   dataProvider: DataProvider;
+  influxdb: InfluxDB;
 
   constructor() {
     assert(config, 'config required.');
@@ -38,9 +42,10 @@ export class ExpertAdvisor {
     this.backtest = config.backtest;
     this.interval = this.backtest.test ? this.backtest.interval : config.ea.interval;
     this.account = { id: config.account.userId };
-  }
-
-  connect() {
+    this.influxdb = new InfluxDB({
+      host: '127.0.0.1',
+      database: 'ns-stock'
+    });
     this.manager = new Manager();
     this.trader = new Trader(config);
     this.dataProvider = new DataProvider(config.store);
@@ -48,6 +53,9 @@ export class ExpertAdvisor {
     if (this.backtest.test) {
       this.backtest.loki = new Loki('backtest.db');
     }
+  }
+
+  connect() {
   }
 
   destroy() {
@@ -125,6 +133,17 @@ export class ExpertAdvisor {
     return <types.Bar[]>outColl.chain().find().data({ removeMeta: true });
   }
 
+  async getCq5minData(symbol: string): Promise<types.Bar[]> {
+    const res = await this.influxdb.connection.query(
+      'select * from candlestick_5min'
+    );
+    const barList: types.Bar[] = new Array();
+    res.forEach(el => {
+      barList.push(<types.Bar>el);
+    });
+    return barList;
+  }
+
   async get5minData(symbol: string): Promise<types.Bar[]> {
     Log.system.info('获取5分钟数据方法[启动]');
     if (this.backtest.test) {
@@ -156,7 +175,7 @@ export class ExpertAdvisor {
 
   async onPretrade() {
     Log.system.info('预交易分析[启动]');
-    const hisData: types.Bar[] = await this.get5minData(this.symbol);
+    const hisData: types.Bar[] = await this.getCq5minData(this.symbol); // this.get5minData(this.symbol);
     if (hisData.length === 0) {
       Log.system.error(`未查询到历史数据!`);
       return;
@@ -169,10 +188,11 @@ export class ExpertAdvisor {
     Log.system.info('len: ' + hisData.length);
 
     // 查询数据库中的信号
-    const singal = await this.manager.signal.get({
+    /*const singal = await this.manager.signal.get({
       symbol: this.symbol
     });
-    Log.system.info(`查询数据库中的信号:${JSON.stringify(singal)}`);
+    Log.system.info(`查询数据库中的信号:${JSON.stringify(singal)}`);*/
+    const singal = null;
     try {
       // 已有信号
       if (singal) {
@@ -283,12 +303,13 @@ export class ExpertAdvisor {
 
     // 没有信号时，执行策略取得信号
     const singal: SniperSingal | null = SniperStrategy.execute(symbol, hisData);
+    const price = numeral(hisData[hisData.length - 1].close).value();
     // 获得买卖信号
     if (singal && singal.side) {
       Log.system.info(`获得买卖信号：${JSON.stringify(singal)}`);
       if (singal.side === types.OrderSide.Buy) {
         // 订单价格
-        const orderPrice = numeral(hisData[hisData.length - 1].close).value() * 100 + 500;
+        const orderPrice = price * 100 + 500;
         Log.system.info(`订单价格:${JSON.stringify(orderPrice)}`);
         if (<number>this.account.balance < orderPrice) {
           const balance = numeral(this.account.balance).format('0,0');
@@ -309,11 +330,10 @@ export class ExpertAdvisor {
           }
         }
       }
-      const price = hisData[hisData.length - 1].close;
       const modelSingal = <types.Model.Signal>Object.assign({
         symbol, price,
         notes: `k值：${singal.k}`
-      }, singal)
+      }, singal);
 
       if (this.backtest.test) {
         modelSingal.backtest = '1';
@@ -322,7 +342,8 @@ export class ExpertAdvisor {
         }
       }
       // 记录信号
-      await this.manager.signal.set(modelSingal);
+      // await this.manager.signal.set(modelSingal);
+      await this.influxdb.putSignal(<Param.Signal>modelSingal);
     }
     Log.system.info('拉取信号[终了]');
   }

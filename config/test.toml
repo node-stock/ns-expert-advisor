@@ -79,3 +79,19 @@
 [ea]
   # 智能交易间隔（秒）
   interval = 30000
+###
+### [influxdb]
+###
+### 时序列数据库相关配置
+###
+[influxdb]
+  host = '127.0.0.1'
+  database = 'ns-stock'
+###
+### [kapacitor]
+###
+### 数据监测相关配置
+###
+[kapacitor]
+  host = '127.0.0.1'
+  database = 'ns-stock'

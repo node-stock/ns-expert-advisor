@@ -4,7 +4,7 @@ import { SniperStrategy, SniperSingal } from 'ns-strategies';
 import * as types from 'ns-types';
 import { Manager } from 'ns-manager';
 import { WebTrader as Trader } from 'ns-trader';
-import { InfluxDB, Param } from 'ns-influxdb';
+import { InfluxDB, Param, Enums } from 'ns-influxdb';
 import { IResults } from 'influx';
 
 import * as assert from 'power-assert';
@@ -42,10 +42,7 @@ export class ExpertAdvisor {
     this.backtest = config.backtest;
     this.interval = this.backtest.test ? this.backtest.interval : config.ea.interval;
     this.account = { id: config.account.userId };
-    this.influxdb = new InfluxDB({
-      host: '127.0.0.1',
-      database: 'ns-stock'
-    });
+    this.influxdb = new InfluxDB(config.influxdb);
     this.manager = new Manager();
     this.trader = new Trader(config);
     this.dataProvider = new DataProvider(config.store);
@@ -135,7 +132,7 @@ export class ExpertAdvisor {
 
   async getCq5minData(symbol: string): Promise<types.Bar[]> {
     const res = await this.influxdb.connection.query(
-      'select * from candlestick_5min'
+      `select * from ${Enums.Measurement.Candlestick_5min} where symbol = '${symbol}'`
     );
     const barList: types.Bar[] = new Array();
     res.forEach(el => {
@@ -156,12 +153,24 @@ export class ExpertAdvisor {
       p: '1d',
       i: 300
     });
-    Log.system.info('google获取数据：', hisData);
-    Log.system.info('len: ', hisData.length)
+    if (hisData.length) {
+      console.log(
+        'google获取数据：%s\n...\n%s',
+        JSON.stringify(hisData[0], null, 2),
+        JSON.stringify(hisData[hisData.length - 1], null, 2)
+      );
+      Log.system.info('len: ', hisData.length)
+    }
     // 获取当天5分钟k线
     const barData = await this.dataProvider.getLast5minBar(symbol);
-    Log.system.info(' 获取当天5分钟k线', barData);
-    Log.system.info('len: ', barData.length);
+    if (barData.length) {
+      console.log(
+        '获取当天5分钟k线：%s\n...\n%s',
+        JSON.stringify(barData[0], null, 2),
+        JSON.stringify(barData[barData.length - 1], null, 2)
+      );
+      Log.system.info('len: ', barData.length);
+    }
     // 合并数据
     barData.map((bar) => {
       const res = hisData.find((his) => his.time !== bar.time);

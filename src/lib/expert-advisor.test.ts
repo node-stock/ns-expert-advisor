@@ -9,7 +9,7 @@ const testGet5minData = async () => {
   const _start = Date.now();
   for (let i = 0; i < 10; i++) {
     const start = Date.now();
-    const bars = await expertAdvisor.get5minData('6553');
+    const bars = await expertAdvisor.get5minData('6553', 'mysql');
     /*console.log(
       '%s\n...\n%s',
       JSON.stringify(bars[0], null, 2),
@@ -33,7 +33,7 @@ const testGetCq5minData = async () => {
 }
 
 const testOnPretrade = async () => {
-  const hisData: types.Bar[] = await expertAdvisor._getTest5minData('6664');
+  const hisData: types.Bar[] = await expertAdvisor._getTest5minData('6664', 'mysql');
   await expertAdvisor.updAsset();
   for (let i = 0; i < hisData.length; i++) {
     await expertAdvisor.onPretrade();

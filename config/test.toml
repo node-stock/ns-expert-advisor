@@ -64,13 +64,11 @@
 ###
 [backtest]
   # 回测模式
-  test = false
+  test = true
   # 是否回测最近一个单位的交易日
   isLastDate = false
   # 回测时间（isLastDate为true时不可用）
   date = "2017-11-01"
-  # 回测间隔（秒）
-  interval = 3000
 ###
 ### [ea]
 ###
@@ -78,20 +76,13 @@
 ###
 [ea]
   # 智能交易间隔（秒）
-  interval = 30000
+  interval = 3000
+  symbols = ["6553", "6664"]
 ###
 ### [influxdb]
 ###
 ### 时序列数据库相关配置
 ###
 [influxdb]
-  host = '127.0.0.1'
-  database = 'ns-stock'
-###
-### [kapacitor]
-###
-### 数据监测相关配置
-###
-[kapacitor]
   host = '127.0.0.1'
   database = 'ns-stock'

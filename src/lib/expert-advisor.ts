@@ -9,12 +9,13 @@ import { IResults } from 'influx';
 
 import * as assert from 'power-assert';
 import * as numeral from 'numeral';
-import * as moment from 'moment';
+import * as moment from 'moment-timezone';
+import { any } from 'bluebird';
 const Loki = require('lokijs');
 const config = require('config');
 
 export class ExpertAdvisor {
-  symbol: string;
+  symbols: string[];
   account: types.Model.Account;
   backtest: {
     test: boolean,
@@ -38,9 +39,9 @@ export class ExpertAdvisor {
     assert(config.ea, 'config.ea required.');
     assert(config.backtest, 'config.backtest required.');
     assert(config.store, 'config.store required.');
-    this.symbol = config.trader.symbol;
+    this.symbols = config.ea.symbols;
     this.backtest = config.backtest;
-    this.interval = this.backtest.test ? this.backtest.interval : config.ea.interval;
+    this.interval = config.ea.interval;
     this.account = { id: config.account.userId };
     this.influxdb = new InfluxDB(config.influxdb);
     this.manager = new Manager();
@@ -52,9 +53,6 @@ export class ExpertAdvisor {
     }
   }
 
-  connect() {
-  }
-
   destroy() {
     clearInterval(this.worker);
     this.manager.destroy();
@@ -63,10 +61,9 @@ export class ExpertAdvisor {
   }
 
   async start() {
-    this.connect();
     // 更新资产
     await this.updAsset();
-    if (this.account.balance === 0) {
+    if (numeral(this.account.balance).value() === 0) {
       Log.system.warn(`账户：${this.account.id},可用余额：0,不执行EA程序！`);
       return;
     }
@@ -81,27 +78,37 @@ export class ExpertAdvisor {
     }
   }
 
-  async _getTest5minData(symbol: string): Promise<types.Bar[]> {
+  async _getTest5minData(symbol: string, type: 'mysql' | 'influxdb'): Promise<types.Bar[]> {
 
     let hisData: types.Bar[] = [];
     // 取最近一日数据
     if (this.backtest.isLastDate) {
-      hisData = <types.Bar[]>await GoogleFinance.getHistory({
-        q: symbol,
-        x: 'TYO',
-        p: '1d',
-        i: 300
-      });
+      if (type === 'influxdb') {
+        const query = `select * from ${Enums.Measurement.Candlestick_5min} where time > now() - 24h and symbol = '${symbol}'`;
+        hisData = await this._getCq5minData(query);
+      } else if (type === 'mysql') {
+        hisData = <types.Bar[]>await GoogleFinance.getHistory({
+          q: symbol,
+          x: 'TYO',
+          p: '1d',
+          i: 300
+        });
+      }
     } else if (this.backtest.date) {
-      hisData = await this.dataProvider.get5minBar({
-        symbol: this.symbol,
-        date: this.backtest.date
-      })
+      if (type === 'influxdb') {
+        const query = `select * from ${Enums.Measurement.Candlestick_5min} where time > now() - 24h and symbol = '${symbol}'`;
+        hisData = await this._getCq5minData(query);
+      } else if (type === 'mysql') {
+        hisData = await this.dataProvider.get5minBar({
+          symbol,
+          date: this.backtest.date
+        })
+      }
     }
     return hisData;
   }
 
-  async getTest5minData(symbol: string): Promise<types.Bar[]> {
+  async getTest5minData(symbol: string, type: 'mysql' | 'influxdb'): Promise<types.Bar[]> {
     const loki = this.backtest.loki;
     const inCollName = 'i_' + symbol;
 
@@ -109,7 +116,7 @@ export class ExpertAdvisor {
     let hisData: types.Bar[] = [];
     // 股票输入表为空时，通过接口获取数据
     if (!inColl) {
-      hisData = await this._getTest5minData(symbol);
+      hisData = await this._getTest5minData(symbol, type);
       if (hisData.length === 0) {
         throw new Error('回测环境未获取5分钟线数据！');
       }
@@ -125,15 +132,16 @@ export class ExpertAdvisor {
       // 插入第一条数据
       outColl.insert(hisData[0]);
     } else {
-      outColl.insert(hisData[outColl.find().length]);
+      const insertData = hisData[outColl.find().length];
+      if (insertData) {
+        outColl.insert(insertData);
+      }
     }
     return <types.Bar[]>outColl.chain().find().data({ removeMeta: true });
   }
 
-  async getCq5minData(symbol: string): Promise<types.Bar[]> {
-    const res = await this.influxdb.connection.query(
-      `select * from ${Enums.Measurement.Candlestick_5min} where symbol = '${symbol}'`
-    );
+  async _getCq5minData(query: string): Promise<types.Bar[]> {
+    const res = await this.influxdb.connection.query(query);
     const barList: types.Bar[] = new Array();
     res.forEach(el => {
       barList.push(<types.Bar>el);
@@ -141,86 +149,122 @@ export class ExpertAdvisor {
     return barList;
   }
 
-  async get5minData(symbol: string): Promise<types.Bar[]> {
+  async getCq5minData(symbol: string): Promise<types.Bar[]> {
+    const query = `select * from ${Enums.Measurement.Candlestick_5min} where time > now() - 12h and symbol = '${symbol}'`;
+    return await this._getCq5minData(query);
+  }
+
+  async get5minData(symbol: string, type: 'mysql' | 'influxdb'): Promise<types.Bar[]> {
     Log.system.info('获取5分钟数据方法[启动]');
     if (this.backtest.test) {
-      return await this.getTest5minData(symbol);
+      return await this.getTest5minData(symbol, type);
     }
-    // 获取历史数据
-    const hisData = <types.Bar[]>await GoogleFinance.getHistory({
-      q: symbol,
-      x: 'TYO',
-      p: '1d',
-      i: 300
-    });
-    if (hisData.length) {
-      console.log(
-        'google获取数据：%s\n...\n%s',
-        JSON.stringify(hisData[0], null, 2),
-        JSON.stringify(hisData[hisData.length - 1], null, 2)
-      );
-      Log.system.info('len: ', hisData.length)
-    }
-    // 获取当天5分钟k线
-    const barData = await this.dataProvider.getLast5minBar(symbol);
-    if (barData.length) {
-      console.log(
-        '获取当天5分钟k线：%s\n...\n%s',
-        JSON.stringify(barData[0], null, 2),
-        JSON.stringify(barData[barData.length - 1], null, 2)
-      );
-      Log.system.info('len: ', barData.length);
-    }
-    // 合并数据
-    barData.map((bar) => {
-      const res = hisData.find((his) => his.time !== bar.time);
-      if (res) {
-        hisData.push(res);
+    let hisData: types.Bar[] = new Array();
+    if (type === 'influxdb') {
+      const res = await this.getCq5minData(symbol);
+      res.forEach(el => {
+        hisData.push(<types.Bar>el);
+      });
+    } else if (type === 'mysql') {
+      // 获取历史数据
+      hisData = <types.Bar[]>await GoogleFinance.getHistory({
+        q: symbol,
+        x: 'TYO',
+        p: '1d',
+        i: 300
+      });
+      if (hisData.length) {
+        console.log(
+          'google获取数据：%s\n...\n%s',
+          JSON.stringify(hisData[0], null, 2),
+          JSON.stringify(hisData[hisData.length - 1], null, 2)
+        );
+        Log.system.info('len: ', hisData.length)
       }
-    })
+      // 获取当天5分钟k线
+      const barData = <types.Bar[]>await this.dataProvider.getLast5minBar(symbol);
+      if (barData.length) {
+        console.log(
+          '获取当天5分钟k线：%s\n...\n%s',
+          JSON.stringify(barData[0], null, 2),
+          JSON.stringify(barData[barData.length - 1], null, 2)
+        );
+        Log.system.info('len: ', barData.length);
+      }
+      // 合并数据
+      barData.map((bar) => {
+        const res = hisData.find((his) => his.time !== bar.time);
+        if (res) {
+          hisData.push(res);
+        }
+      })
+    }
     Log.system.info('获取5分钟数据方法[终了]');
     return hisData;
   }
 
   async onPretrade() {
     Log.system.info('预交易分析[启动]');
-    const hisData: types.Bar[] = await this.getCq5minData(this.symbol); // this.get5minData(this.symbol);
-    if (hisData.length === 0) {
-      Log.system.error(`未查询到历史数据!`);
-      return;
-    }
-    Log.system.info(
-      '获取数据: %s\n...\n%s',
-      JSON.stringify(hisData[0], null, 2),
-      JSON.stringify(hisData[hisData.length - 1], null, 2)
-    );
-    Log.system.info('len: ' + hisData.length);
 
-    // 查询数据库中的信号
-    /*const singal = await this.manager.signal.get({
-      symbol: this.symbol
-    });
-    Log.system.info(`查询数据库中的信号:${JSON.stringify(singal)}`);*/
-    const singal = null;
-    try {
-      // 已有信号
-      if (singal) {
-        // 处理信号
-        await this.singalHandle(this.symbol, hisData, singal);
-      } else {
-        // 获取信号并存储
-        await this.pullSingal(this.symbol, hisData);
+    for (const symbol of this.symbols) {
+
+      const hisData: types.Bar[] = await this.get5minData(symbol, 'influxdb'); // this.get5minData(this.symbol);
+      if (hisData.length === 0) {
+        Log.system.error(`未查询到历史数据!`);
+        return;
       }
-    } catch (err) {
-      Log.system.error(err.stack);
+      Log.system.info(
+        '获取数据: %s\n...\n%s',
+        JSON.stringify(hisData[0], null, 2),
+        JSON.stringify(hisData[hisData.length - 1], null, 2)
+      );
+      Log.system.info('len: ' + hisData.length);
+
+      // 查询数据库中的信号
+      const singal = await this.manager.signal.get({ symbol });
+      Log.system.info(`查询数据库中的信号:${JSON.stringify(singal)}`);
+      try {
+        // 已有信号
+        if (singal) {
+          // 处理信号
+          await this.singalHandle(symbol, hisData, singal);
+        } else {
+          // 获取信号并存储
+          await this.pullSingal(symbol, hisData);
+        }
+      } catch (err) {
+        Log.system.error(err.stack);
+      }
     }
+
     Log.system.info('预交易分析[终了]');
   }
 
   async singalHandle(symbol: string, hisData: types.Bar[], singal: { [Attr: string]: any }) {
     Log.system.info('处理信号[启动]');
     const price: number = numeral(hisData[hisData.length - 1].close).value();
-    const time = moment.unix((<number>hisData[hisData.length - 1].time) / 1000).format('YYYY-MM-DD HH:mm:ss');
+    let time = String(hisData[hisData.length - 1].time);
+    // 为timestamp时间
+    /*if (!Date.parse(time)) {
+      time = moment.unix(Number(time) / 1000).format('YYYY-MM-DD HH:mm:ss');
+    } else {
+      time = String(((<{ [Attr: string]: any }>hisData[hisData.length - 1]).time).getNanoTime() / Math.pow(10, 9));
+    }*/
+
+    // 为文字时间类型时间
+    if (Date.parse(time)) {
+      time = (<{ [Attr: string]: any }>hisData[hisData.length - 1]).time;
+      if (typeof (<any>time).getNanoTime === 'function') {
+        time = String((<any>time).getNanoTime() / Math.pow(10, 6));
+        time = moment.unix(Number(time) / 1000).format('YYYY-MM-DD HH:mm:ss');
+      } else {
+        // 文字时间字符串
+        time = time.replace('T', ' ').replace('.000Z', '');
+      }
+    } else {
+      time = moment.unix(Number(time) / 1000).format('YYYY-MM-DD HH:mm:ss');
+    }
+    // time = moment.tz(time, 'Asia/Tokyo').format();
     Log.system.info(`symbol：${symbol}, price：${price}, time：${time}`);
     // 买入信号
     if (singal.side === types.OrderSide.Buy) {
@@ -351,7 +395,7 @@ export class ExpertAdvisor {
         }
       }
       // 记录信号
-      // await this.manager.signal.set(modelSingal);
+      await this.manager.signal.set(modelSingal);
       await this.influxdb.putSignal(<Param.Signal>modelSingal);
     }
     Log.system.info('拉取信号[终了]');

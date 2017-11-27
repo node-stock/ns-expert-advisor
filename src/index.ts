@@ -1,6 +1,7 @@
 import { ExpertAdvisor } from './lib/expert-advisor';
 import { Log, Util, Scheduler } from 'ns-common';
 
+const config = require('config');
 Log.init(Log.category.system, Log.level.ALL, 'ns-expert-advisor');
 
 const expertAdvisor = new ExpertAdvisor();
@@ -18,8 +19,8 @@ const stopServ = (serv: ExpertAdvisor) => {
   Log.system.info('EA程序退出方法[终了]');
 }
 
-// 如果为交易时间，直接启动EA服务
-if (Util.isTradeTime()) {
+// 如果为交易时间或回测模式，直接启动EA服务
+if (Util.isTradeTime() || config.backtest.test) {
   Log.system.info('当前为交易时间，直接启动EA程序');
   expertAdvisor.start();
   stopServ(expertAdvisor);

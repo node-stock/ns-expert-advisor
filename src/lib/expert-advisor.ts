@@ -244,12 +244,6 @@ export class ExpertAdvisor {
     Log.system.info('处理信号[启动]');
     const price: number = numeral(hisData[hisData.length - 1].close).value();
     let time = String(hisData[hisData.length - 1].time);
-    // 为timestamp时间
-    /*if (!Date.parse(time)) {
-      time = moment.unix(Number(time) / 1000).format('YYYY-MM-DD HH:mm:ss');
-    } else {
-      time = String(((<{ [Attr: string]: any }>hisData[hisData.length - 1]).time).getNanoTime() / Math.pow(10, 9));
-    }*/
 
     // 为文字时间类型时间
     if (Date.parse(time)) {
@@ -273,6 +267,7 @@ export class ExpertAdvisor {
       if (singal.price < price) {
         Log.system.info('买入信号出现后,股价止跌上涨,立即买入', price);
         const order = <types.LimitOrder>Object.assign({}, this.trader.order, {
+          symbol,
           side: types.OrderSide.Buy,
           price
         });
@@ -321,6 +316,7 @@ export class ExpertAdvisor {
       if (singal.price > price && price - position.price > 7) {
         Log.system.info('卖出信号出现后,股价下跌,立即卖出', price);
         const order = <types.LimitOrder>Object.assign({}, this.trader.order, {
+          symbol,
           side: types.OrderSide.Sell,
           price,
         });

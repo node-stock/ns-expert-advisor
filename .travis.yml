@@ -3,10 +3,6 @@ node_js:
 - '8'
 dist: trusty
 sudo: required
-projectKey: ns-expert-advisor
-sources: src
-language: js
-profile: node
 
 addons:
   sonarcloud:
@@ -16,7 +12,7 @@ addons:
 jdk:
   - oraclejdk8
 script:
-  - sonar-scanner
+  - sonar-scanner -- -Dsonar.projectKey=ns-expert-advisor -Dsonar.sources=src
 cache:
   directories:
     - '$HOME/.sonar/cache'

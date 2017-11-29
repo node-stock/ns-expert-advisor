@@ -3,6 +3,10 @@ node_js:
 - '8'
 dist: trusty
 sudo: required
+projectKey: ns-expert-advisor
+sources: src
+language: js
+profile: node
 
 addons:
   sonarcloud:

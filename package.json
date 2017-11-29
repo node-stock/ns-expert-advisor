@@ -21,6 +21,7 @@
   "dependencies": {
     "lokijs": "^1.5.1",
     "moment": "^2.19.0",
+    "moment-timezone": "^0.5.14",
     "mysql2": "^1.4.2",
     "ns-common": "0.0.11",
     "ns-findata": "0.0.23",

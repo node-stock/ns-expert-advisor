@@ -18,3 +18,4 @@ package-lock.json
 tsconfig.development.json
 tsconfig.json
 tslint.json
+sonar-project.properties

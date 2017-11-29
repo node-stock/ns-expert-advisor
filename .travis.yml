@@ -12,7 +12,7 @@ addons:
 jdk:
   - oraclejdk8
 script:
-  - sonar-scanner -Dsonar.projectKey=ns-expert-advisor -Dsonar.sources=src
+  - sonar-scanner
   - npm test
 cache:
   directories:

@@ -6,9 +6,9 @@ sudo: required
 
 addons:
   sonarcloud:
-    organization: "node-stock"
+    organization: "$SONAR_ORG"
     token:
-      secure: "bvOkG03FmYz+ESoIhVQmC3I9rHlDBnkBa18ie084koGfPxY/haDO7G93RNHrSSNwASrAriww4kt9wo7phyHV2VWBTF1y7tHRg44sGmOB3ienWgJNKaDVwZLnSzIfxOVZb9JnufAD4piEtYlJ3fo8eZtcL+P8AAveVF8mcOBD5EbE1xDQ7QH1hRPfJ4NVJdjvCarPR/eXthKBkCahrxVyhWMSZW9es5J4E5p2NJpEW5LRxZ/TaNTG35cvXCB5oOf7cbKII0J6X4tCn4nxTve3m40bhNJvkVMs7la3aTM8yHxVIJvD77SzOUGSQYhbsz2Q9Mp2sZeCRhp1DvrGtHJYavhBtbQdCw7H88GKcJSa1V2DK05TuvnGKi9Rc1TvulYsJfzShkteGfPwgMfuL3pkyCJL6M4NCfko+cFmZcW3j3RjN9YlReRpebLOWuo8F+0vdXG858V3q1FgoFv2KaixmNc99oi2Nw34Jp5VsWprZpkDlKrZuP9A8ZkgiXAXdn69zaTTAnEOALfkF84Bm7olsq4uL8FQPnM53/tD61yGVvxVOucrEUBDs5TuzzSSrTO3G9zTW1PQNpXcRrYKbXxqD/OeztPtu2lokdtEXUAxJabMFpi5CfIYk5ryiJVEMuQlbACqahfA0q3KgLduEQk/5lpPk41EuuAkYXb8WAVl0Ww="
+      secure: "$SONAR_TOKEN"
 jdk:
   - oraclejdk8
 script:

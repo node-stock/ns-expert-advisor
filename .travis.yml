@@ -13,6 +13,7 @@ jdk:
   - oraclejdk8
 script:
   - sonar-scanner -Dsonar.projectKey=ns-expert-advisor -Dsonar.sources=src
+  - npm test
 cache:
   directories:
     - '$HOME/.sonar/cache'

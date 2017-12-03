@@ -348,9 +348,7 @@ export class ExpertAdvisor {
   public async postOrder(order: types.Order): Promise<any> {
     const requestOptions = {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
+      headers: new Headers({ 'content-type': 'application/json' }),
       body: JSON.stringify({
         orderInfo: order
       })
@@ -362,9 +360,7 @@ export class ExpertAdvisor {
   public async postSlack(signal: types.Model.Signal) {
     const requestOptions = {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
+      headers: new Headers({ 'content-type': 'application/json' }),
       body: JSON.stringify({
         attachments: [
           {

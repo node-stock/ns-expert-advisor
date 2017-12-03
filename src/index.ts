@@ -27,7 +27,7 @@ if (Util.isTradeTime() || config.backtest.test) {
 }
 Log.system.info('注册定时EA服务程序[开始]');
 const eaTask = new Scheduler('0 9 * * *'); // */3 * * * * * // 0 9 * * *
-eaTask.invok((ea: ExpertAdvisor) => {
+eaTask.invok(async (ea: ExpertAdvisor) => {
   // eaTask.reminder.cancel()
   if (!Util.isTradeDate(new Date())) {
     Log.system.info('当前非交易日，不启动EA程序');
@@ -35,9 +35,12 @@ eaTask.invok((ea: ExpertAdvisor) => {
   }
 
   Log.system.info('定时启动EA服务');
-  expertAdvisor.start().catch((err: Error) => {
+  try {
+    await expertAdvisor.dataProvider.init();
+    await expertAdvisor.start();
+  } catch (err) {
     Log.system.error(`EA服务异常：${err.stack}`);
-  });
+  };
   stopServ(expertAdvisor);
 }, expertAdvisor);
 Log.system.info('注册定时EA服务程序[终了]');

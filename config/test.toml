@@ -48,6 +48,10 @@
   test = true
   # Web交易者初始化股票界面
   symbol = 6553
+  # host
+  host = "127.0.0.1"
+  # port
+  port = 6060
 ###
 ### [strategies]
 ###
@@ -55,8 +59,8 @@
 ###
 [strategies]
 [strategies.sniper]
-  buy = 85
-  sell = 15
+  buy = 15
+  sell = 85
 ###
 ### [backtest]
 ###
@@ -77,7 +81,7 @@
 [ea]
   # 智能交易间隔（秒）
   interval = 3000
-  symbols = ["6553", "6664"]
+  symbols = ["3667","5852","7777","6553", "6664"]
 ###
 ### [influxdb]
 ###

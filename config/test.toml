@@ -90,3 +90,6 @@
 [influxdb]
   host = '127.0.0.1'
   database = 'ns-stock'
+
+[slack]
+  url = 'https://hooks.slack.com/services/xxx'

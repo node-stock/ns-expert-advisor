@@ -338,8 +338,9 @@ export class ExpertAdvisor {
       // 记录信号
       await SignalManager.set(modelSignal);
       if (!this.backtest.test) {
-        await this.influxdb.putSignal(<Param.Signal>modelSignal);
+        // await this.influxdb.putSignal(<Param.Signal>modelSignal);
       }
+      await this.postSlack(modelSignal);
     }
     Log.system.info('拉取信号[终了]');
   }
@@ -356,5 +357,38 @@ export class ExpertAdvisor {
     };
     const url = `http://${config.trader.host}:${config.trader.port}/api/v1/order`;
     return await fetch(url, requestOptions);
+  }
+
+  public async postSlack(signal: types.Model.Signal) {
+    const requestOptions = {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        attachments: [
+          {
+            color: '#36a64f',
+            title: '銘柄：' + signal.symbol,
+            text: signal.notes,
+            fields: [
+              {
+                title: '价格',
+                value: signal.price,
+                short: true
+              },
+              {
+                title: '方向',
+                value: signal.side === 'buy' ? '买入' : '卖出',
+                short: true
+              }
+            ],
+            footer: '5分钟KDJ   ' + moment().format('YYYY-MM-DD hh:mm:ss'),
+            footer_icon: 'https://platform.slack-edge.com/img/default_application_icon.png'
+          }
+        ]
+      })
+    };
+    return await fetch(config.slack.url, requestOptions);
   }
 }

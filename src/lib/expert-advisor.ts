@@ -364,7 +364,7 @@ export class ExpertAdvisor {
       body: JSON.stringify({
         attachments: [
           {
-            color: '#36a64f',
+            color: signal.side === 'buy' ? 'danger' : 'good',
             title: '銘柄：' + signal.symbol,
             text: signal.notes,
             fields: [

@@ -28,7 +28,7 @@
     "ns-findata": "0.0.26",
     "ns-influxdb": "0.0.4",
     "ns-manager": "0.0.34",
-    "ns-signal": "0.0.3",
+    "ns-signal": "0.0.4",
     "ns-store": "0.0.32",
     "ns-strategies": "0.0.12",
     "ns-types": "0.0.22",

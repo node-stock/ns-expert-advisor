@@ -26,6 +26,7 @@ export interface ITradingInput {
 export class ExpertAdvisor {
   symbols: string[];
   accountId: string;
+  coinId: string;
   order: { [Attr: string]: any };
   backtest: {
     test: boolean,
@@ -51,6 +52,7 @@ export class ExpertAdvisor {
     this.backtest = config.backtest;
     this.interval = config.ea.interval;
     this.accountId = config.account.userId;
+    this.coinId = config.account.coinId;
     this.signal = new Signal(config);
     this.dataProvider = new DataProvider(config.store);
     this.order = {

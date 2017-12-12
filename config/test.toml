@@ -95,4 +95,4 @@
   database = 'ns-stock'
 
 [slack]
-  url = 'https://hooks.slack.com/services/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'
+  url = 'https://hooks.slack.com/'

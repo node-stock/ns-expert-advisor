@@ -1,6 +1,6 @@
 {
   "name": "ns-expert-advisor",
-  "version": "0.0.8",
+  "version": "0.0.9",
   "description": "node-stock expert advisor app",
   "repository": {
     "type": "git",
@@ -28,7 +28,7 @@
     "ns-findata": "0.0.27",
     "ns-influxdb": "0.0.8",
     "ns-manager": "0.0.36",
-    "ns-signal": "0.0.6",
+    "ns-signal": "0.0.7",
     "ns-store": "0.0.33",
     "ns-strategies": "0.0.12",
     "ns-types": "0.0.26",

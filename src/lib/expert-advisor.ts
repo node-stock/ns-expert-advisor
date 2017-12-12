@@ -1,6 +1,7 @@
-import { Log } from 'ns-common';
+import { Log, Util } from 'ns-common';
 import { GoogleFinance, DataProvider } from 'ns-findata';
-import { SniperStrategy, SniperSignal } from 'ns-strategies';
+import { SniperSignal } from 'ns-strategies';
+import { Signal, IKdjOutput } from 'ns-signal';
 import * as types from 'ns-types';
 import { SignalManager, AccountManager, TraderManager } from 'ns-manager';
 import { InfluxDB, Param, Enums } from 'ns-influxdb';
@@ -13,9 +14,21 @@ import * as fetch from 'isomorphic-fetch';
 const Loki = require('lokijs');
 const config = require('config');
 
+export interface ITradingInput {
+  symbol: string,
+  type: string,
+  price: number,
+  time: string,
+  signal: {
+    [Attr: string]: any
+  }
+}
+
 export class ExpertAdvisor {
   symbols: string[];
-  account: types.Model.Account;
+  coins: string[];
+  accountId: string;
+  coinId: string;
   order: { [Attr: string]: any };
   backtest: {
     test: boolean,
@@ -24,11 +37,11 @@ export class ExpertAdvisor {
     interval: number,
     loki: any
   };
+  signal: Signal;
   // 实时监测间隔
   interval: number;
   worker: number;
   dataProvider: DataProvider;
-  influxdb: InfluxDB;
 
   constructor() {
     assert(config, 'config required.');
@@ -38,15 +51,13 @@ export class ExpertAdvisor {
     assert(config.backtest, 'config.backtest required.');
     assert(config.store, 'config.store required.');
     this.symbols = config.ea.symbols;
+    this.coins = config.ea.coins;
     this.backtest = config.backtest;
     this.interval = config.ea.interval;
-    this.account = { id: config.account.userId };
-    this.influxdb = new InfluxDB(config.influxdb);
+    this.accountId = config.account.userId;
+    this.coinId = config.account.coinId;
+    this.signal = new Signal(config);
     this.dataProvider = new DataProvider(config.store);
-    // 回测模式时，启动临时中间数据库
-    if (this.backtest.test) {
-      this.backtest.loki = new Loki('backtest.db');
-    }
     this.order = {
       eventType: types.EventType.Order,
       tradeType: types.TradeType.Margin,
@@ -63,125 +74,48 @@ export class ExpertAdvisor {
 
   async start() {
     await this.dataProvider.init();
-    // 更新资产
-    await this.updAsset();
-    if (numeral(this.account.balance).value() === 0) {
-      Log.system.warn(`账户：${this.account.id},可用余额：0,不执行EA程序！`);
-      return;
-    }
     this.worker = setInterval(this.onPretrade.bind(this), this.interval);
-  }
-
-  async updAsset() {
-    const res = await AccountManager.get(this.account.id);
-    if (res) {
-      this.account = res;
-    }
-  }
-
-  async _getTest5minData(symbol: string): Promise<types.Bar[]> {
-
-    let hisData: types.Bar[] = [];
-    // 取最近一日数据
-    if (this.backtest.isLastDate) {
-      const query = `select * from ${Enums.Measurement.Candlestick_5min} where time > now() - 24h and symbol = '${symbol}'`;
-      hisData = await this._getCq5minData(query);
-    } else if (this.backtest.date) {
-      const query = `select * from ${Enums.Measurement.Candlestick_5min} where time > now() - 64h and symbol = '${symbol}'`;
-      hisData = await this._getCq5minData(query);
-    }
-    return hisData;
-  }
-
-  async getTest5minData(symbol: string): Promise<types.Bar[]> {
-    const loki = this.backtest.loki;
-    const inCollName = 'i_' + symbol;
-
-    let inColl = loki.getCollection(inCollName);
-    let hisData: types.Bar[] = [];
-    // 股票输入表为空时，通过接口获取数据
-    if (!inColl) {
-      hisData = await this._getTest5minData(symbol);
-      if (hisData.length === 0) {
-        throw new Error('回测环境未获取5分钟线数据！');
-      }
-      inColl = loki.addCollection(inCollName);
-      inColl.insert(JSON.parse(JSON.stringify(hisData)));
-    } else {
-      hisData = inColl.chain().find().data({ removeMeta: true });
-    }
-    // 取出数据导入输出表
-    let outColl = loki.getCollection(symbol);
-    if (!outColl) {
-      outColl = loki.addCollection(symbol);
-      // 插入第一条数据
-      outColl.insert(hisData[0]);
-    } else {
-      const insertData = hisData[outColl.find().length];
-      if (insertData) {
-        outColl.insert(insertData);
-      }
-    }
-    return <types.Bar[]>outColl.chain().find().data({ removeMeta: true });
-  }
-
-  async _getCq5minData(query: string): Promise<types.Bar[]> {
-    const res = await this.influxdb.connection.query(query);
-    const barList: types.Bar[] = new Array();
-    res.forEach(el => {
-      barList.push(<types.Bar>el);
-    });
-    return barList;
-  }
-
-  async getCq5minData(symbol: string): Promise<types.Bar[]> {
-    const query = `select * from ${Enums.Measurement.Candlestick_5min} where time > now() - 12h and symbol = '${symbol}'`;
-    return await this._getCq5minData(query);
-  }
-
-  async get5minData(symbol: string): Promise<types.Bar[]> {
-    Log.system.info('获取5分钟数据方法[启动]');
-    if (this.backtest.test) {
-      return await this.getTest5minData(symbol);
-    }
-    const hisData: types.Bar[] = new Array();
-    const res = await this.getCq5minData(symbol);
-    res.forEach(el => {
-      hisData.push(<types.Bar>el);
-    });
-    Log.system.info('获取5分钟数据方法[终了]');
-    return hisData;
   }
 
   async onPretrade() {
     Log.system.info('预交易分析[启动]');
-
+    const signalList: IKdjOutput[] = [];
+    if (this.coins && this.coins.length > 0) {
+      signalList.concat(<IKdjOutput[]>await this.signal.kdj(
+        this.coins, types.SymbolType.cryptocoin, types.CandlestickUnit.Min5));
+    }
+    if (Util.isTradeTime()) {
+      Log.system.info('股市交易时间,查询股市信号');
+      signalList.concat(<IKdjOutput[]>await this.signal.kdj(
+        this.symbols, types.SymbolType.stock, types.CandlestickUnit.Min5));
+    }
+    let i = 0;
     for (const symbol of this.symbols) {
-
-      const hisData: types.Bar[] = await this.get5minData(symbol);
-      if (hisData.length === 0) {
-        Log.system.error(`未查询到历史数据!`);
-        return;
-      }
-      Log.system.info(
-        '获取数据: %s\n...\n%s',
-        JSON.stringify(hisData[0], null, 2),
-        JSON.stringify(hisData[hisData.length - 1], null, 2)
-      );
-      Log.system.info('len: ' + hisData.length);
-
       // 查询数据库中的信号
-      const signal = await SignalManager.get({ symbol });
-      Log.system.info(`查询数据库中的信号:${JSON.stringify(signal)}`);
+      const dbSignal = await SignalManager.get({ symbol });
+      Log.system.info(`查询数据库中的信号:${JSON.stringify(dbSignal)}`);
       try {
-        // 已有信号
-        if (signal) {
-          // 处理信号
-          await this.signalHandle(symbol, hisData, signal);
-        } else {
-          // 获取信号并存储
-          await this.pullSignal(symbol, hisData);
+        const signal = signalList[i];
+        // kdj算出信号时
+        if (signal.side) {
+          await this.signalHandle(symbol, signal);
         }
+        // 数据库中已存储信号
+        if (dbSignal) {
+          if (dbSignal.symbol.indexOf('_btc') !== -1) {
+            Log.system.warn(`暂时未对应此商品:${dbSignal.symbol}`);
+            return;
+          }
+          // 交易处理
+          await this.tradingHandle({
+            symbol,
+            type: <types.SymbolType>signal.symbolType,
+            price: <number>signal.lastPrice,
+            time: <string>signal.lastTime,
+            signal: dbSignal
+          });
+        }
+        i++;
       } catch (err) {
         Log.system.error(err.stack);
       }
@@ -190,57 +124,110 @@ export class ExpertAdvisor {
     Log.system.info('预交易分析[终了]');
   }
 
-  async signalHandle(symbol: string, hisData: types.Bar[], signal: { [Attr: string]: any }) {
-    Log.system.info('处理信号[启动]');
-    const price: number = numeral(hisData[hisData.length - 1].close).value();
-    const time = moment(hisData[hisData.length - 1].time).format('YYYY-MM-DD HH:mm:ss');
+  // 信号处理
+  async signalHandle(symbol: string, signal: IKdjOutput) {
+    const modelSignal: types.Model.Signal = Object.assign({
+      symbol,
+      price: signal.lastPrice,
+      notes: `k值：${signal.k}`
+    }, signal, { side: String(signal.side) });
 
-    // time = moment.tz(time, 'Asia/Tokyo').format();
-    Log.system.info(`symbol：${symbol}, price：${price}, time：${time}`);
+    if (this.backtest.test) {
+      modelSignal.backtest = '1';
+      modelSignal.mocktime = signal.lastTime;
+    }
+
+    // 记录信号
+    await SignalManager.set(modelSignal);
+    if (!this.backtest.test) {
+      // await this.influxdb.putSignal(<Param.Signal>modelSignal);
+    }
+    // 推送信号警报
+    await this.alertHandle(modelSignal);
+  }
+
+  getFee(symbolType: types.SymbolType) {
+    return symbolType === types.SymbolType.cryptocoin ? 0 : 500;
+  }
+
+  // 交易处理
+  async tradingHandle(input: ITradingInput) {
+    Log.system.info('交易信号处理[启动]');
     // 买入信号
-    if (signal.side === types.OrderSide.Buy) {
+    if (input.signal.side === types.OrderSide.Buy) {
       Log.system.info('买入信号');
       // 信号股价 < 当前股价(股价止跌上涨)
-      if (signal.price < price) {
-        Log.system.info('买入信号出现后,股价止跌上涨,立即买入', price);
+      if (<number>input.signal.price < input.price) {
+        Log.system.info(`买入信号出现后,${input.symbol}股价止跌上涨,买入处理[开始]`);
+
         const order = <types.LimitOrder>Object.assign({}, this.order, {
-          symbol,
+          symbol: input.symbol,
           side: types.OrderSide.Buy,
-          price
+          price: input.price
         });
+        let accountId = this.accountId;
+        if (input.type === types.SymbolType.cryptocoin) {
+          order.amount = 0.001
+          accountId = this.coinId;
+        }
         if (this.backtest.test) {
           order.backtest = '1';
-          order.mocktime = time;
+          order.mocktime = input.time;
         }
+
+        // 查询资产
+        const account = await AccountManager.get(accountId);
+        if (!account) {
+          Log.system.error(`系统出错，未查询到用户(${this.accountId})信息。`);
+          return;
+        }
+        // 订单价格
+        const orderPrice = order.price * order.amount + this.getFee(<types.SymbolType>input.type);
+        if (<number>account.balance < orderPrice) {
+          Log.system.warn(`可用余额：${account.balance} < 订单价格：${orderPrice}，退出买入处理！`);
+          return;
+        }
+        Log.system.info(`订单价格:${orderPrice}`);
         try {
           // 买入
           await this.postOrder(order);
+          await this.postTradeSlack(order, 0);
+          Log.system.info(`发送买入指令`);
         } catch (e) {
-          Log.system.warn('发送买入请求失败：', e.stack);
+          Log.system.warn('发送买入指令失败：', e.stack);
         }
         // 记录交易信息
-        await TraderManager.set(this.account.id, order);
+        await TraderManager.set(this.accountId, order);
         // 消除信号
-        await SignalManager.remove(signal.id);
-        // 更新资产
-        await this.updAsset();
-      } else if (signal.price > price) { // 股价继续下跌
-        Log.system.info('更新买入信号股价', price);
-        signal.price = price;
+        await SignalManager.remove(input.signal.id);
+        Log.system.info(`买入处理[终了]`);
+      } else if (<number>input.signal.price > input.price) { // 股价继续下跌
+        Log.system.info('更新买入信号股价', input.price);
+        input.signal.price = input.price;
         if (this.backtest.test) {
-          signal.backtest = '1';
-          signal.mocktime = time;
+          input.signal.backtest = '1';
+          input.signal.mocktime = input.time;
         }
         // 记录当前股价
-        await SignalManager.set(<types.Model.Signal>signal);
+        await SignalManager.set(<types.Model.Signal>input.signal);
       }
-    } else if (signal.side === types.OrderSide.Sell) {
+    } else if (input.signal.side === types.OrderSide.Sell) {
       Log.system.info('卖出信号');
+      let accountId = this.accountId;
+      if (input.type === types.SymbolType.cryptocoin) {
+        accountId = this.coinId;
+      }
+      // 查询资产
+      const account = await AccountManager.get(accountId);
+      if (!account) {
+        Log.system.error(`系统出错，未查询到用户(${accountId})信息。`);
+        return;
+      }
       // 查询是否有持仓
       let position: types.Model.Position | undefined;
-      if (this.account.positions) {
-        position = this.account.positions.find((posi) => {
-          return posi.symbol === String(symbol) && posi.side === types.OrderSide.Buy;
+      if (account.positions) {
+        position = account.positions.find((posi) => {
+          return posi.symbol === String(input.symbol) && posi.side === types.OrderSide.Buy;
         })
       }
       if (!position) {
@@ -252,97 +239,53 @@ export class ExpertAdvisor {
         Log.system.error('持仓股价为空！');
         return;
       }
-      Log.system.info(`信号股价(${signal.price}) > 当前股价(${price}) && 盈利超过700(${price} - ${position.price} > 7)`);
-      // 信号出现时股价 > 当前股价(股价下跌) && 并且盈利超过700
-      if (signal.price > price && price - position.price > 7) {
-        Log.system.info('卖出信号出现后,股价下跌,立即卖出', price);
+      Log.system.info(`信号股价(${input.signal.price}) > 当前股价(${input.price}) && 盈利超过700(${input.price - position.price} > 7)`);
+      const profitRule = input.type === types.SymbolType.cryptocoin ? true : input.price - position.price > 7;
+      // 信号出现时股价 > 当前股价(股价下跌) && 并且盈利超过700（数字货币无此限制）
+      if (input.signal.price > input.price && profitRule) {
+        Log.system.info(`卖出信号出现后,${input.symbol}股价下跌,卖出处理[开始]`);
         const order = <types.LimitOrder>Object.assign({}, this.order, {
-          symbol,
+          symbol: input.symbol,
           side: types.OrderSide.BuyClose,
-          price,
+          price: input.price,
         });
+        if (input.type === types.SymbolType.cryptocoin) {
+          order.amount = 0.001
+        }
         if (this.backtest.test) {
           order.backtest = '1';
-          order.mocktime = time;
+          order.mocktime = input.time;
         }
         try {
           // 卖出
           await this.postOrder(order);
+          const profit = (order.price * order.amount) - (input.price * order.amount)
+            - this.getFee(<types.SymbolType>input.type);
+          await this.postTradeSlack(order, profit);
         } catch (e) {
           Log.system.warn('发送卖出请求失败：', e.stack);
         }
         // 记录交易信息
-        await TraderManager.set(this.account.id, order);
+        await TraderManager.set(this.accountId, order);
         // 消除信号
-        await SignalManager.remove(signal.id);
-        // 更新资产
-        await this.updAsset();
-      } else if (signal.price < price) { // 股价继续上涨
-        Log.system.info('更新卖出信号股价', price);
-        signal.price = price;
+        await SignalManager.remove(input.signal.id);
+      } else if (input.signal.price < input.price) { // 股价继续上涨
+        Log.system.info('更新卖出信号股价', input.price);
+        input.signal.price = input.price;
         if (this.backtest.test) {
-          signal.backtest = '1';
-          signal.mocktime = time;
+          input.signal.backtest = '1';
+          input.signal.mocktime = input.time;
         }
         // 记录当前股价
-        await SignalManager.set(<types.Model.Signal>signal);
+        await SignalManager.set(<types.Model.Signal>input.signal);
       }
     }
-    Log.system.info('处理信号[终了]');
+    Log.system.info('交易信号处理[终了]');
   }
 
-  // 拉取信号
-  async pullSignal(symbol: string, hisData: types.Bar[]) {
-    Log.system.info('拉取信号[启动]');
-
-    // 没有信号时，执行策略取得信号
-    const signal: SniperSignal | null = SniperStrategy.execute(symbol, hisData);
-    const price = numeral(hisData[hisData.length - 1].close).value();
-    // 获得买卖信号
-    if (signal && signal.side) {
-      Log.system.info(`获得买卖信号：${JSON.stringify(signal)}`);
-      if (signal.side === types.OrderSide.Buy) {
-        // 订单价格
-        const orderPrice = price * 100 + 500;
-        Log.system.info(`订单价格:${JSON.stringify(orderPrice)}`);
-        if (<number>this.account.balance < orderPrice) {
-          const balance = numeral(this.account.balance).format('0,0');
-          Log.system.warn(`可用余额：${balance} < 订单价格(${symbol})：${numeral(orderPrice).format('0,0')}，不拉取信号！`);
-          return;
-        }
-      } else if (signal.side === types.OrderSide.Sell) {
-
-        // 查询是否有持仓
-        if (this.account.positions) {
-          const position = this.account.positions.find((posi) => {
-            return posi.symbol === String(symbol) && posi.side === types.OrderSide.Buy;
-          });
-
-          if (!position) {
-            Log.system.warn('未查询到持仓，不保存卖出信号！');
-            return;
-          }
-        }
-      }
-      const modelSignal = <types.Model.Signal>Object.assign({
-        symbol, price,
-        notes: `k值：${signal.k}`
-      }, signal);
-
-      if (this.backtest.test) {
-        modelSignal.backtest = '1';
-        if (hisData[hisData.length - 1].time) {
-          modelSignal.mocktime = moment(hisData[hisData.length - 1].time).format('YYYY-MM-DD HH:mm:ss');
-        }
-      }
-      // 记录信号
-      await SignalManager.set(modelSignal);
-      if (!this.backtest.test) {
-        // await this.influxdb.putSignal(<Param.Signal>modelSignal);
-      }
-      await this.postSlack(modelSignal);
-    }
-    Log.system.info('拉取信号[终了]');
+  // 警报处理
+  async alertHandle(signal: types.Model.Signal) {
+    await this.postSlack(signal);
   }
 
   public async postOrder(order: types.Order): Promise<any> {
@@ -362,15 +305,16 @@ export class ExpertAdvisor {
       method: 'POST',
       headers: new Headers({ 'content-type': 'application/json' }),
       body: JSON.stringify({
+        channel: signal.type === 'stock' ? '#kdj' : '#coin',
         attachments: [
           {
             color: signal.side === 'buy' ? 'danger' : 'good',
-            title: '銘柄：' + signal.symbol,
+            title: '商品：' + signal.symbol,
             text: signal.notes,
             fields: [
               {
                 title: '价格',
-                value: signal.price,
+                value: signal.price + '',
                 short: true
               },
               {
@@ -380,7 +324,49 @@ export class ExpertAdvisor {
               }
             ],
             footer: '5分钟KDJ   ' + moment().format('YYYY-MM-DD hh:mm:ss'),
-            footer_icon: 'https://platform.slack-edge.com/img/default_application_icon.png'
+            footer_icon: signal.type === 'stock' ?
+              'https://platform.slack-edge.com/img/default_application_icon.png' : 'https://png.icons8.com/dusk/2x/bitcoin.png'
+          }
+        ]
+      })
+    };
+    return await fetch(config.slack.url, requestOptions);
+  }
+
+  public async postTradeSlack(order: types.Order, profit: number) {
+    const requestOptions = {
+      method: 'POST',
+      headers: new Headers({ 'content-type': 'application/json' }),
+      body: JSON.stringify({
+        channel: '#coin_trade',
+        attachments: [
+          {
+            color: order.side === 'buy' ? 'danger' : 'good',
+            title: '商品：' + order.symbol,
+            fields: [
+              {
+                title: '价格',
+                value: order.price + '',
+                short: true
+              },
+              {
+                title: '方向',
+                value: order.side === 'buy' ? '买入' : '卖出',
+                short: true
+              },
+              {
+                title: '数量',
+                value: order.amount + '',
+                short: true
+              },
+              {
+                title: '盈利',
+                value: profit + '',
+                short: true
+              }
+            ],
+            footer: 'AI自动交易   ' + moment().format('YYYY-MM-DD hh:mm:ss'),
+            footer_icon: 'https://png.icons8.com/dusk/2x/event-accepted.png'
           }
         ]
       })

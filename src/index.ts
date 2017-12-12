@@ -1,11 +1,12 @@
 import { ExpertAdvisor } from './lib/expert-advisor';
-import { Log, Util, Scheduler } from 'ns-common';
+import { Log, Util } from 'ns-common';
 
 const config = require('config');
 Log.init(Log.category.system, Log.level.ALL, 'ns-expert-advisor');
 
 const expertAdvisor = new ExpertAdvisor();
-
+expertAdvisor.start();
+/*
 const stopServ = (serv: ExpertAdvisor) => {
   Log.system.info('EA程序退出方法[启动]');
   // 资源释放
@@ -26,7 +27,7 @@ if (Util.isTradeTime() || config.backtest.test) {
   stopServ(expertAdvisor);
 }
 Log.system.info('注册定时EA服务程序[开始]');
-const eaTask = new Scheduler('0 9 * * *'); // */3 * * * * * // 0 9 * * *
+const eaTask = new Scheduler('0 9 * * *'); //
 eaTask.invok(async (ea: ExpertAdvisor) => {
   // eaTask.reminder.cancel()
   if (!Util.isTradeDate(new Date())) {
@@ -44,3 +45,4 @@ eaTask.invok(async (ea: ExpertAdvisor) => {
   stopServ(expertAdvisor);
 }, expertAdvisor);
 Log.system.info('注册定时EA服务程序[终了]');
+*/

@@ -79,25 +79,28 @@ export class ExpertAdvisor {
 
   async onPretrade() {
     Log.system.info('预交易分析[启动]');
-    const signalList: IKdjOutput[] = [];
+    let signalList: IKdjOutput[] = [];
+    let watchList: string[] = []
     if (this.coins && this.coins.length > 0) {
-      signalList.concat(<IKdjOutput[]>await this.signal.kdj(
+      signalList = signalList.concat(<IKdjOutput[]>await this.signal.kdj(
         this.coins, types.SymbolType.cryptocoin, types.CandlestickUnit.Min5));
+      watchList = this.coins;
     }
-    if (Util.isTradeTime()) {
+    if (Util.isTradeTime() && this.symbols) {
+      watchList = watchList.concat(this.symbols)
       Log.system.info('股市交易时间,查询股市信号');
-      signalList.concat(<IKdjOutput[]>await this.signal.kdj(
+      signalList = signalList.concat(<IKdjOutput[]>await this.signal.kdj(
         this.symbols, types.SymbolType.stock, types.CandlestickUnit.Min5));
     }
     let i = 0;
-    for (const symbol of this.symbols) {
+    for (const symbol of watchList) {
       // 查询数据库中的信号
       const dbSignal = await SignalManager.get({ symbol });
       Log.system.info(`查询数据库中的信号:${JSON.stringify(dbSignal)}`);
       try {
         const signal = signalList[i];
         // kdj算出信号时
-        if (signal.side) {
+        if (signal && signal.side) {
           await this.signalHandle(symbol, signal);
         }
         // 数据库中已存储信号

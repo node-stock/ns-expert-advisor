@@ -243,7 +243,7 @@ export class ExpertAdvisor {
         return;
       }
       Log.system.info(`信号股价(${input.signal.price}) > 当前股价(${input.price}) && 盈利超过700(${input.price - position.price} > 7)`);
-      const profitRule = input.type === types.SymbolType.cryptocoin ? true : input.price - position.price > 7;
+      const profitRule = input.type === types.SymbolType.cryptocoin ? input.price - position.price > 0 : input.price - position.price > 7;
       // 信号出现时股价 > 当前股价(股价下跌) && 并且盈利超过700（数字货币无此限制）
       if (input.signal.price > input.price && profitRule) {
         Log.system.info(`卖出信号出现后,${input.symbol}股价下跌,卖出处理[开始]`);

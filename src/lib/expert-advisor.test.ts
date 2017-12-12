@@ -63,7 +63,7 @@ const testPostOrderSlack = async () => {
     amount: 200,
     eventType: types.EventType.Order
   };
-  const res = await expertAdvisor.postTradeSlack(order);
+  const res = await expertAdvisor.postTradeSlack(order, 0);
   console.log(res.status)
   assert(true);
 }

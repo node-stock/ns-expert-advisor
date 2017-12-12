@@ -181,7 +181,7 @@ export class ExpertAdvisor {
         // 查询资产
         const account = await AccountManager.get(accountId);
         if (!account) {
-          Log.system.error(`系统出错，未查询到用户(${this.accountId})信息。`);
+          Log.system.error(`系统出错，未查询到用户(${accountId})信息。`);
           return;
         }
         // 订单价格
@@ -200,7 +200,7 @@ export class ExpertAdvisor {
           Log.system.warn('发送买入指令失败：', e.stack);
         }
         // 记录交易信息
-        await TraderManager.set(this.accountId, order);
+        await TraderManager.set(accountId, order);
         // 消除信号
         await SignalManager.remove(input.signal.id);
         Log.system.info(`买入处理[终了]`);
@@ -229,7 +229,7 @@ export class ExpertAdvisor {
       // 查询是否有持仓
       let position: types.Model.Position | undefined;
       if (account.positions) {
-        position = account.positions.find((posi) => {
+        position = account.positions.find((posi: types.Model.Position) => {
           return posi.symbol === String(input.symbol) && posi.side === types.OrderSide.Buy;
         })
       }
@@ -269,7 +269,7 @@ export class ExpertAdvisor {
           Log.system.warn('发送卖出请求失败：', e.stack);
         }
         // 记录交易信息
-        await TraderManager.set(this.accountId, order);
+        await TraderManager.set(accountId, order);
         // 消除信号
         await SignalManager.remove(input.signal.id);
       } else if (input.signal.price < input.price) { // 股价继续上涨

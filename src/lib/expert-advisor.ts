@@ -74,6 +74,7 @@ export class ExpertAdvisor {
 
   async start() {
     await this.dataProvider.init();
+    // await this.onPretrade();
     this.worker = setInterval(this.onPretrade.bind(this), this.interval);
   }
 
@@ -86,7 +87,7 @@ export class ExpertAdvisor {
         this.coins, types.SymbolType.cryptocoin, types.CandlestickUnit.Min5));
       watchList = this.coins;
     }
-    if (Util.isTradeTime() && this.symbols) {
+    if (Util.isTradeTime() && this.symbols.length > 0) {
       watchList = watchList.concat(this.symbols)
       Log.system.info('股市交易时间,查询股市信号');
       signalList = signalList.concat(<IKdjOutput[]>await this.signal.kdj(
@@ -94,6 +95,7 @@ export class ExpertAdvisor {
     }
     let i = 0;
     for (const symbol of watchList) {
+      Log.system.info(`处理商品：${symbol}`);
       // 查询数据库中的信号
       const dbSignal = await SignalManager.get({ symbol });
       Log.system.info(`查询数据库中的信号:${JSON.stringify(dbSignal)}`);
@@ -244,7 +246,7 @@ export class ExpertAdvisor {
       }
       Log.system.info(`信号股价(${input.signal.price}) > 当前股价(${input.price}) && 盈利超过700(${input.price - position.price} > 7)`);
       const profitRule = input.type === types.SymbolType.cryptocoin ?
-        input.price / position.price > 1.1 : input.price - position.price > 7;
+        input.price / position.price >= 1.1 : input.price - position.price > 7;
       // 信号出现时股价 > 当前股价(股价下跌) && 并且盈利超过700（数字货币无此限制）
       if (input.signal.price > input.price && profitRule) {
         Log.system.info(`卖出信号出现后,${input.symbol}股价下跌,卖出处理[开始]`);

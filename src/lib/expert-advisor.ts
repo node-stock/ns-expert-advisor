@@ -3,7 +3,7 @@ import { GoogleFinance, DataProvider } from 'ns-findata';
 import { SniperSignal } from 'ns-strategies';
 import { Signal, IKdjOutput } from 'ns-signal';
 import * as types from 'ns-types';
-import { SignalManager, AccountManager, TraderManager } from 'ns-manager';
+import { SignalManager, AccountManager, TraderManager, PositionManager } from 'ns-manager';
 import { InfluxDB, Param, Enums } from 'ns-influxdb';
 import { IResults } from 'influx';
 
@@ -172,7 +172,7 @@ export class ExpertAdvisor {
 
         const order = <types.LimitOrder>Object.assign({}, this.order, {
           symbol: input.symbol,
-          side: types.OrderSide.Buy,
+          side: input.signal.side,
           price: input.price
         });
         let accountId = this.accountId;
@@ -191,6 +191,23 @@ export class ExpertAdvisor {
           Log.system.error(`系统出错，未查询到用户(${accountId})信息。`);
           return;
         }
+
+        // 查询持仓
+        const position = await PositionManager.get(<types.Model.Position>{
+          symbol: input.symbol,
+          side: input.signal.side,
+          account_id: accountId
+        });
+        if (position) {
+          Log.system.info(`查询出已持有此商品(${JSON.stringify(position, null, 2)})`);
+          const buyInterval = Date.now() - new Date(String(position.created_at)).getTime();
+          Log.system.info(`与持仓买卖间隔(${buyInterval})`);
+          if (buyInterval <= (300 * 1000)) {
+            Log.system.info(`买卖间隔小于5分钟,中断买入操作`);
+            return;
+          }
+        }
+
         // 订单价格
         const orderPrice = order.price * order.amount + this.getFee(<types.SymbolType>input.type);
         if (<number>account.balance < orderPrice) {

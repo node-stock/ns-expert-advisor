@@ -27,7 +27,7 @@
     "ns-common": "0.0.11",
     "ns-findata": "0.0.27",
     "ns-influxdb": "0.0.8",
-    "ns-manager": "0.0.38",
+    "ns-manager": "0.0.39",
     "ns-signal": "0.0.8",
     "ns-store": "0.0.33",
     "ns-strategies": "0.0.13",
@@ -56,7 +56,7 @@
     "intelli-espower-loader": "^1.0.1",
     "mocha": "^4.0.1",
     "power-assert": "^1.4.4",
-    "ts-node": "^3.3.0",
+    "ts-node": "^4.0.1",
     "tslint": "^5.8.0",
     "typescript": "^2.6.1"
   }

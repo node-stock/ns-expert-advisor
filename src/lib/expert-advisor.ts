@@ -139,9 +139,14 @@ export class ExpertAdvisor {
 
     if (this.backtest.test) {
       modelSignal.backtest = '1';
-      modelSignal.mocktime = signal.lastTime;
+      // modelSignal.mocktime = signal.lastTime;
     }
 
+    // 删除已存在信号
+    const dbSignal = await SignalManager.get(modelSignal);
+    if (dbSignal) {
+      await SignalManager.remove(String(dbSignal.id));
+    }
     // 记录信号
     await SignalManager.set(modelSignal);
     if (!this.backtest.test) {

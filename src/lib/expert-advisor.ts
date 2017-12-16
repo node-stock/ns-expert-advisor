@@ -147,10 +147,6 @@ export class ExpertAdvisor {
     await this.alertHandle(modelSignal);
   }
 
-  getFee(symbolType: types.SymbolType) {
-    return symbolType === types.SymbolType.cryptocoin ? 0 : 500;
-  }
-
   // 交易处理
   async tradingHandle(input: ITradingInput) {
     Log.system.info('交易信号处理[启动]');
@@ -171,7 +167,7 @@ export class ExpertAdvisor {
     });
     let tradeType;
     if (input.type === types.SymbolType.cryptocoin) {
-      const res = this.getTradeUnit(input.symbol);
+      const res = Util.getTradeUnit(input.symbol);
       order.amount = res.amount;
       tradeType = res.type;
     }
@@ -204,7 +200,7 @@ export class ExpertAdvisor {
 
         // 订单价格
         let balance = Number(account.balance);
-        const orderPrice = order.price * order.amount + this.getFee(<types.SymbolType>input.type);
+        const orderPrice = order.price * order.amount + Util.getFee(input.symbol);
         if (tradeType === 'btc') {
           Log.system.info('通过比特币购买');
           balance = Number(account.bitcoin);
@@ -261,7 +257,7 @@ export class ExpertAdvisor {
           // 卖出
           await this.postOrder(order);
           const profit = (order.price * order.amount) - (input.price * order.amount)
-            - this.getFee(<types.SymbolType>input.type);
+            - Util.getFee(input.symbol);
           Log.system.info(`卖出利润：${profit}`);
           await this.postTradeSlack(order, profit);
         } catch (e) {
@@ -370,32 +366,5 @@ export class ExpertAdvisor {
       })
     };
     return await fetch(config.slack.url, requestOptions);
-  }
-
-  /**
-   * 返回交易类型：[交易单位，交易类型]
-   * @param symbol 商品代码
-   */
-  getTradeUnit(symbol: string) {
-    switch (symbol) {
-      case types.Pair.BTC_JPY:
-        return { amount: 0.001, type: undefined };
-      case types.Pair.XRP_JPY:
-        return { amount: 20, type: undefined };
-      case types.Pair.LTC_BTC:
-        return { amount: 0.1, type: 'btc' };
-      case types.Pair.ETH_BTC:
-        return { amount: 0.3, type: 'btc' };
-      case types.Pair.MONA_JPY:
-        return { amount: 1, type: undefined };
-      case types.Pair.MONA_BTC:
-        return { amount: 2, type: 'btc' };
-      case types.Pair.BCC_JPY:
-        return { amount: 0.01, type: undefined };
-      case types.Pair.BCC_BTC:
-        return { amount: 0.01, type: 'btc' };
-      default:
-        return { amount: 0.001, type: undefined };
-    }
   }
 }

@@ -169,8 +169,11 @@ export class ExpertAdvisor {
       symbol: input.symbol,
       price: input.price,
     });
+    let tradeType;
     if (input.type === types.SymbolType.cryptocoin) {
-      order.amount = this.getTradeUnit(input.symbol);
+      const res = this.getTradeUnit(input.symbol);
+      order.amount = res.amount;
+      tradeType = res.type;
     }
     if (this.backtest.test) {
       order.backtest = '1';
@@ -192,17 +195,22 @@ export class ExpertAdvisor {
             Log.system.info(`查询出已持有此商品(${JSON.stringify(position, null, 2)})`);
             const buyInterval = Date.now() - new Date(String(position.created_at)).getTime();
             Log.system.info(`与持仓买卖间隔(${buyInterval})`);
-            if (buyInterval <= (300 * 1000)) {
-              Log.system.info(`买卖间隔小于5分钟,中断买入操作`);
+            if (buyInterval <= (600 * 1000)) {
+              Log.system.info(`买卖间隔小于10分钟,中断买入操作`);
               return;
             }
           }
         }
 
         // 订单价格
+        let balance = Number(account.balance);
         const orderPrice = order.price * order.amount + this.getFee(<types.SymbolType>input.type);
-        if (<number>account.balance < orderPrice) {
-          Log.system.warn(`可用余额：${account.balance} < 订单价格：${orderPrice}，退出买入处理！`);
+        if (tradeType === 'btc') {
+          Log.system.info('通过比特币购买');
+          balance = Number(account.bitcoin);
+        }
+        if (balance < orderPrice) {
+          Log.system.warn(`可用余额：${balance} < 订单价格：${orderPrice}，退出买入处理！`);
           return;
         }
         Log.system.info(`订单价格:${orderPrice}`);
@@ -254,6 +262,7 @@ export class ExpertAdvisor {
           await this.postOrder(order);
           const profit = (order.price * order.amount) - (input.price * order.amount)
             - this.getFee(<types.SymbolType>input.type);
+          Log.system.info(`卖出利润：${profit}`);
           await this.postTradeSlack(order, profit);
         } catch (e) {
           Log.system.warn('发送卖出请求失败：', e.stack);
@@ -363,26 +372,30 @@ export class ExpertAdvisor {
     return await fetch(config.slack.url, requestOptions);
   }
 
+  /**
+   * 返回交易类型：[交易单位，交易类型]
+   * @param symbol 商品代码
+   */
   getTradeUnit(symbol: string) {
     switch (symbol) {
       case types.Pair.BTC_JPY:
-        return 0.001;
+        return { amount: 0.001, type: undefined };
       case types.Pair.XRP_JPY:
-        return 20;
+        return { amount: 20, type: undefined };
       case types.Pair.LTC_BTC:
-        return 0.1;
+        return { amount: 0.1, type: 'btc' };
       case types.Pair.ETH_BTC:
-        return 0.3;
+        return { amount: 0.3, type: 'btc' };
       case types.Pair.MONA_JPY:
-        return 1;
+        return { amount: 1, type: undefined };
       case types.Pair.MONA_BTC:
-        return 2;
+        return { amount: 2, type: 'btc' };
       case types.Pair.BCC_JPY:
-        return 0.01;
+        return { amount: 0.01, type: undefined };
       case types.Pair.BCC_BTC:
-        return 0.01;
+        return { amount: 0.01, type: 'btc' };
       default:
-        return 0.001
+        return { amount: 0.001, type: undefined };
     }
   }
 }

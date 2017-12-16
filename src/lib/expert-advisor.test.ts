@@ -70,7 +70,6 @@ const testPostOrderSlack = async () => {
 
 const testPostSlack = async () => {
   const signal: types.Model.Signal = {
-    type: types.SymbolType.cryptocoin,
     price: 0.00001234,
     symbol: 'btc_jpy',
     side: types.OrderSide.Buy

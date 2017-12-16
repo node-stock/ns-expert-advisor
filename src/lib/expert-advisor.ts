@@ -1,11 +1,8 @@
 import { Log, Util } from 'ns-common';
 import { GoogleFinance, DataProvider } from 'ns-findata';
-import { SniperSignal } from 'ns-strategies';
 import { Signal, IKdjOutput } from 'ns-signal';
 import * as types from 'ns-types';
 import { SignalManager, AccountManager, TraderManager, PositionManager } from 'ns-manager';
-import { InfluxDB, Param, Enums } from 'ns-influxdb';
-import { IResults } from 'influx';
 
 import * as assert from 'power-assert';
 import * as numeral from 'numeral';
@@ -93,6 +90,7 @@ export class ExpertAdvisor {
       signalList = signalList.concat(<IKdjOutput[]>await this.signal.kdj(
         this.symbols, types.SymbolType.stock, types.CandlestickUnit.Min5));
     }
+    Log.system.info('监视列表：', watchList);
     let i = 0;
     for (const symbol of watchList) {
       Log.system.info(`处理商品：${symbol}`);
@@ -107,10 +105,6 @@ export class ExpertAdvisor {
         }
         // 数据库中已存储信号
         if (dbSignal) {
-          if (dbSignal.symbol.indexOf('_btc') !== -1) {
-            Log.system.warn(`暂时未对应此商品:${dbSignal.symbol}`);
-            return;
-          }
           // 交易处理
           await this.tradingHandle({
             symbol,
@@ -149,9 +143,6 @@ export class ExpertAdvisor {
     }
     // 记录信号
     await SignalManager.set(modelSignal);
-    if (!this.backtest.test) {
-      // await this.influxdb.putSignal(<Param.Signal>modelSignal);
-    }
     // 推送信号警报
     await this.alertHandle(modelSignal);
   }
@@ -163,48 +154,48 @@ export class ExpertAdvisor {
   // 交易处理
   async tradingHandle(input: ITradingInput) {
     Log.system.info('交易信号处理[启动]');
+    let accountId = this.accountId;
+    if (input.type === types.SymbolType.cryptocoin) {
+      accountId = this.coinId;
+    }
+    // 查询资产
+    const account = await AccountManager.get(accountId);
+    if (!account) {
+      Log.system.error(`系统出错，未查询到用户(${accountId})信息。`);
+      return;
+    }
+    // 订单对象
+    const order = <types.LimitOrder>Object.assign({}, this.order, {
+      symbol: input.symbol,
+      price: input.price,
+    });
+    if (input.type === types.SymbolType.cryptocoin) {
+      order.amount = this.getTradeUnit(input.symbol);
+    }
+    if (this.backtest.test) {
+      order.backtest = '1';
+      order.mocktime = input.time;
+    }
+
     // 买入信号
     if (input.signal.side === types.OrderSide.Buy) {
       Log.system.info('买入信号');
       // 信号股价 < 当前股价(股价止跌上涨)
       if (<number>input.signal.price < input.price) {
         Log.system.info(`买入信号出现后,${input.symbol}股价止跌上涨,买入处理[开始]`);
-
-        const order = <types.LimitOrder>Object.assign({}, this.order, {
-          symbol: input.symbol,
-          side: input.signal.side,
-          price: input.price
-        });
-        let accountId = this.accountId;
-        if (input.type === types.SymbolType.cryptocoin) {
-          order.amount = 0.001
-          accountId = this.coinId;
-        }
-        if (this.backtest.test) {
-          order.backtest = '1';
-          order.mocktime = input.time;
-        }
-
-        // 查询资产
-        const account = await AccountManager.get(accountId);
-        if (!account) {
-          Log.system.error(`系统出错，未查询到用户(${accountId})信息。`);
-          return;
-        }
-
+        order.side = input.signal.side;
         // 查询持仓
-        const position = await PositionManager.get(<types.Model.Position>{
-          symbol: input.symbol,
-          side: input.signal.side,
-          account_id: accountId
-        });
-        if (position) {
-          Log.system.info(`查询出已持有此商品(${JSON.stringify(position, null, 2)})`);
-          const buyInterval = Date.now() - new Date(String(position.created_at)).getTime();
-          Log.system.info(`与持仓买卖间隔(${buyInterval})`);
-          if (buyInterval <= (300 * 1000)) {
-            Log.system.info(`买卖间隔小于5分钟,中断买入操作`);
-            return;
+        if (account.positions && account.positions.length > 0) {
+          const position = account.positions.find(posi =>
+            posi.symbol === input.symbol && posi.side === input.signal.side);
+          if (position) {
+            Log.system.info(`查询出已持有此商品(${JSON.stringify(position, null, 2)})`);
+            const buyInterval = Date.now() - new Date(String(position.created_at)).getTime();
+            Log.system.info(`与持仓买卖间隔(${buyInterval})`);
+            if (buyInterval <= (300 * 1000)) {
+              Log.system.info(`买卖间隔小于5分钟,中断买入操作`);
+              return;
+            }
           }
         }
 
@@ -231,25 +222,11 @@ export class ExpertAdvisor {
       } else if (<number>input.signal.price > input.price) { // 股价继续下跌
         Log.system.info('更新买入信号股价', input.price);
         input.signal.price = input.price;
-        if (this.backtest.test) {
-          input.signal.backtest = '1';
-          input.signal.mocktime = input.time;
-        }
         // 记录当前股价
         await SignalManager.set(<types.Model.Signal>input.signal);
       }
     } else if (input.signal.side === types.OrderSide.Sell) {
       Log.system.info('卖出信号');
-      let accountId = this.accountId;
-      if (input.type === types.SymbolType.cryptocoin) {
-        accountId = this.coinId;
-      }
-      // 查询资产
-      const account = await AccountManager.get(accountId);
-      if (!account) {
-        Log.system.error(`系统出错，未查询到用户(${accountId})信息。`);
-        return;
-      }
       // 查询是否有持仓
       let position: types.Model.Position | undefined;
       if (account.positions) {
@@ -272,18 +249,6 @@ export class ExpertAdvisor {
       // 信号出现时股价 > 当前股价(股价下跌) && 并且盈利超过700（数字货币无此限制）
       if (input.signal.price > input.price && profitRule) {
         Log.system.info(`卖出信号出现后,${input.symbol}股价下跌,卖出处理[开始]`);
-        const order = <types.LimitOrder>Object.assign({}, this.order, {
-          symbol: input.symbol,
-          side: types.OrderSide.BuyClose,
-          price: input.price,
-        });
-        if (input.type === types.SymbolType.cryptocoin) {
-          order.amount = 0.001
-        }
-        if (this.backtest.test) {
-          order.backtest = '1';
-          order.mocktime = input.time;
-        }
         try {
           // 卖出
           await this.postOrder(order);
@@ -300,10 +265,6 @@ export class ExpertAdvisor {
       } else if (input.signal.price < input.price) { // 股价继续上涨
         Log.system.info('更新卖出信号股价', input.price);
         input.signal.price = input.price;
-        if (this.backtest.test) {
-          input.signal.backtest = '1';
-          input.signal.mocktime = input.time;
-        }
         // 记录当前股价
         await SignalManager.set(<types.Model.Signal>input.signal);
       }
@@ -316,7 +277,7 @@ export class ExpertAdvisor {
     await this.postSlack(signal);
   }
 
-  public async postOrder(order: types.Order): Promise<any> {
+  async postOrder(order: types.Order): Promise<any> {
     const requestOptions = {
       method: 'POST',
       headers: new Headers({ 'content-type': 'application/json' }),
@@ -328,12 +289,12 @@ export class ExpertAdvisor {
     return await fetch(url, requestOptions);
   }
 
-  public async postSlack(signal: types.Model.Signal) {
+  async postSlack(signal: types.Model.Signal) {
     const requestOptions = {
       method: 'POST',
       headers: new Headers({ 'content-type': 'application/json' }),
       body: JSON.stringify({
-        channel: signal.type === 'stock' ? '#kdj' : '#coin',
+        channel: signal.symbol.includes('_') ? '#coin' : '#kdj',
         attachments: [
           {
             color: signal.side === 'buy' ? 'danger' : 'good',
@@ -352,7 +313,7 @@ export class ExpertAdvisor {
               }
             ],
             footer: '5分钟KDJ   ' + moment().format('YYYY-MM-DD hh:mm:ss'),
-            footer_icon: signal.type === 'stock' ?
+            footer_icon: !signal.symbol.includes('_') ?
               'https://platform.slack-edge.com/img/default_application_icon.png' : 'https://png.icons8.com/dusk/2x/bitcoin.png'
           }
         ]
@@ -361,7 +322,7 @@ export class ExpertAdvisor {
     return await fetch(config.slack.url, requestOptions);
   }
 
-  public async postTradeSlack(order: types.Order, profit: number) {
+  async postTradeSlack(order: types.Order, profit: number) {
     const requestOptions = {
       method: 'POST',
       headers: new Headers({ 'content-type': 'application/json' }),
@@ -400,5 +361,28 @@ export class ExpertAdvisor {
       })
     };
     return await fetch(config.slack.url, requestOptions);
+  }
+
+  getTradeUnit(symbol: string) {
+    switch (symbol) {
+      case types.Pair.BTC_JPY:
+        return 0.001;
+      case types.Pair.XRP_JPY:
+        return 20;
+      case types.Pair.LTC_BTC:
+        return 0.1;
+      case types.Pair.ETH_BTC:
+        return 0.3;
+      case types.Pair.MONA_JPY:
+        return 1;
+      case types.Pair.MONA_BTC:
+        return 2;
+      case types.Pair.BCC_JPY:
+        return 0.01;
+      case types.Pair.BCC_BTC:
+        return 0.01;
+      default:
+        return 0.001
+    }
   }
 }

@@ -5,6 +5,7 @@
 /dist/**/*.test.js
 /dist/**/*.test.d.ts
 /config/development.toml
+config/test.toml
 npm-debug.log
 .idea
 .vscode

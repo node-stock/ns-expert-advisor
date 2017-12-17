@@ -139,12 +139,17 @@ export class ExpertAdvisor {
     // 删除已存在信号
     const dbSignal = await SignalManager.get(modelSignal);
     if (dbSignal) {
-      await SignalManager.remove(String(dbSignal.id));
+      Log.system.info(`查询出已存储信号(${JSON.stringify(dbSignal, null, 2)})`);
+      const signalInterval = Date.now() - new Date(String(dbSignal.created_at)).getTime();
+      if (signalInterval <= (300 * 1000)) {
+        Log.system.info(`信号间隔小于5分钟,不发送信号！`);
+      } else {
+        // 推送信号警报
+        await this.alertHandle(modelSignal);
+      }
     }
     // 记录信号
     await SignalManager.set(modelSignal);
-    // 推送信号警报
-    await this.alertHandle(modelSignal);
   }
 
   // 交易处理

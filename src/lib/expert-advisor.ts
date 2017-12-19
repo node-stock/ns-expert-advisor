@@ -1,8 +1,9 @@
 import { Log, Util } from 'ns-common';
-import { GoogleFinance, DataProvider } from 'ns-findata';
+import { DataProvider } from 'ns-findata';
 import { Signal, IKdjOutput } from 'ns-signal';
+import { SlackAlerter } from 'ns-alerter';
 import * as types from 'ns-types';
-import { SignalManager, AccountManager, TraderManager, PositionManager } from 'ns-manager';
+import { SignalManager, AccountManager } from 'ns-manager';
 
 import * as assert from 'power-assert';
 import * as numeral from 'numeral';
@@ -136,15 +137,20 @@ export class ExpertAdvisor {
       // modelSignal.mocktime = signal.lastTime;
     }
 
-    // 删除已存在信号
+    // 更新信号
     const dbSignal = await SignalManager.get(modelSignal);
     if (dbSignal) {
-      await SignalManager.remove(String(dbSignal.id));
+      Log.system.info(`查询出已存储信号(${JSON.stringify(dbSignal, null, 2)})`);
+      const signalInterval = Date.now() - new Date(String(dbSignal.created_at)).getTime();
+      if (signalInterval <= (120 * 1000)) {
+        Log.system.info(`信号间隔小于2分钟,不发送信号！`);
+      } else {
+        // 推送信号警报
+        await SlackAlerter.sendSignal(modelSignal);
+      }
     }
     // 记录信号
     await SignalManager.set(modelSignal);
-    // 推送信号警报
-    await this.alertHandle(modelSignal);
   }
 
   // 交易处理
@@ -213,7 +219,7 @@ export class ExpertAdvisor {
         try {
           // 买入
           await this.postOrder(order);
-          await this.postTradeSlack(order, 0);
+          await SlackAlerter.sendTrade(order);
           Log.system.info(`发送买入指令`);
         } catch (e) {
           Log.system.warn('发送买入指令失败：', e.stack);
@@ -236,7 +242,7 @@ export class ExpertAdvisor {
       if (account.positions) {
         position = account.positions.find((posi: types.Model.Position) => {
           return posi.symbol === String(input.symbol) && posi.side === types.OrderSide.Buy;
-        })
+        });
       }
       if (!position) {
         Log.system.warn('未查询到持仓，不进行卖出！');
@@ -249,7 +255,7 @@ export class ExpertAdvisor {
       }
       Log.system.info(`信号股价(${input.signal.price}) > 当前股价(${input.price}) && 盈利超过700(${input.price - position.price} > 7)`);
       const profitRule = input.type === types.SymbolType.cryptocoin ?
-        input.price / position.price >= 1.1 : input.price - position.price > 7;
+        input.price > position.price : input.price - position.price > 7; // >= 1.1
       // 信号出现时股价 > 当前股价(股价下跌) && 并且盈利超过700（数字货币无此限制）
       if (input.signal.price > input.price && profitRule) {
         Log.system.info(`卖出信号出现后,${input.symbol}股价下跌,卖出处理[开始]`);
@@ -259,7 +265,7 @@ export class ExpertAdvisor {
           const profit = (order.price * order.amount) - (input.price * order.amount)
             - Util.getFee(input.symbol);
           Log.system.info(`卖出利润：${profit}`);
-          await this.postTradeSlack(order, profit);
+          await SlackAlerter.sendTrade(order, profit);
         } catch (e) {
           Log.system.warn('发送卖出请求失败：', e.stack);
         }
@@ -277,11 +283,6 @@ export class ExpertAdvisor {
     Log.system.info('交易信号处理[终了]');
   }
 
-  // 警报处理
-  async alertHandle(signal: types.Model.Signal) {
-    await this.postSlack(signal);
-  }
-
   async postOrder(order: types.Order): Promise<any> {
     const requestOptions = {
       method: 'POST',
@@ -292,79 +293,5 @@ export class ExpertAdvisor {
     };
     const url = `http://${config.trader.host}:${config.trader.port}/api/v1/order`;
     return await fetch(url, requestOptions);
-  }
-
-  async postSlack(signal: types.Model.Signal) {
-    const requestOptions = {
-      method: 'POST',
-      headers: new Headers({ 'content-type': 'application/json' }),
-      body: JSON.stringify({
-        channel: signal.symbol.includes('_') ? '#coin' : '#kdj',
-        attachments: [
-          {
-            color: signal.side === 'buy' ? 'danger' : 'good',
-            title: '商品：' + signal.symbol,
-            text: signal.notes,
-            fields: [
-              {
-                title: '价格',
-                value: signal.price + '',
-                short: true
-              },
-              {
-                title: '方向',
-                value: signal.side === 'buy' ? '买入' : '卖出',
-                short: true
-              }
-            ],
-            footer: '5分钟KDJ   ' + moment().format('YYYY-MM-DD hh:mm:ss'),
-            footer_icon: !signal.symbol.includes('_') ?
-              'https://platform.slack-edge.com/img/default_application_icon.png' : 'https://png.icons8.com/dusk/2x/bitcoin.png'
-          }
-        ]
-      })
-    };
-    return await fetch(config.slack.url, requestOptions);
-  }
-
-  async postTradeSlack(order: types.Order, profit: number) {
-    const requestOptions = {
-      method: 'POST',
-      headers: new Headers({ 'content-type': 'application/json' }),
-      body: JSON.stringify({
-        channel: '#coin_trade',
-        attachments: [
-          {
-            color: order.side === 'buy' ? 'danger' : 'good',
-            title: '商品：' + order.symbol,
-            fields: [
-              {
-                title: '价格',
-                value: order.price + '',
-                short: true
-              },
-              {
-                title: '方向',
-                value: order.side === 'buy' ? '买入' : '卖出',
-                short: true
-              },
-              {
-                title: '数量',
-                value: order.amount + '',
-                short: true
-              },
-              {
-                title: '盈利',
-                value: profit + '',
-                short: true
-              }
-            ],
-            footer: 'AI自动交易   ' + moment().format('YYYY-MM-DD hh:mm:ss'),
-            footer_icon: 'https://png.icons8.com/dusk/2x/event-accepted.png'
-          }
-        ]
-      })
-    };
-    return await fetch(config.slack.url, requestOptions);
   }
 }

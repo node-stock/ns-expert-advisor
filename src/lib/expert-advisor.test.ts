@@ -1,4 +1,4 @@
-import { ExpertAdvisor } from './expert-advisor';
+import { ExpertAdvisor, ITradingInput } from './expert-advisor';
 import * as assert from 'power-assert';
 import * as types from 'ns-types';
 
@@ -79,20 +79,37 @@ const testPostSlack = async () => {
   assert(true);
 }
 
-expertAdvisor.start();
+const testTradingHandle = async () => {
+  const input: ITradingInput = {
+    symbol: 'xrp_jpy',
+    type: types.SymbolType.cryptocoin,
+    price: 87.24,
+    time: 'test',
+    signal: {
+      side: types.OrderSide.Buy,
+      price: 86
+    }
+  };
+  const res = await expertAdvisor.tradingHandle(input);
+  console.log(res);
+  assert(true);
+}
+// expertAdvisor.start();
 
 describe('ExpertAdvisor测试', () => {
-  /*before(async () => {
-    await expertAdvisor.start();
-  })
+  before(async () => {
+    await expertAdvisor.dataProvider.init();
+  });
+  /*
   it('测试数据获取', testGet5minData);
   it('测试CQ数据', testGetCq5minData);*/
+  it('测试交易处理', testTradingHandle);
   // it('预交易测试', testOnPretrade);
   // it('测试发送交易信息', testPostOrderSlack);
   // it('测试发送数字货币信号', testPostSlack);
-  /* it('交易服务测试', testPostOrder);
+  /* it('交易服务测试', testPostOrder);*/
   after(async () => {
     console.log('测试后处理');
     await expertAdvisor.destroy();
-  });*/
+  });
 });

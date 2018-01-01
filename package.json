@@ -1,6 +1,6 @@
 {
   "name": "ns-expert-advisor",
-  "version": "0.0.12",
+  "version": "0.0.13",
   "description": "node-stock expert advisor app",
   "repository": {
     "type": "git",
@@ -19,23 +19,28 @@
     "prepare": "npm run rm && tsc -p tsconfig.json"
   },
   "dependencies": {
+    "bignumber.js": "^5.0.0",
+    "es6-promise": "^4.1.1",
+    "isomorphic-fetch": "^2.2.1",
     "lokijs": "^1.5.1",
     "moment": "^2.19.3",
     "mysql2": "^1.5.1",
-    "ns-alerter": "0.0.1",
-    "ns-common": "0.0.12",
-    "ns-findata": "0.0.30",
-    "ns-manager": "0.0.44",
-    "ns-signal": "0.0.14",
-    "ns-store": "0.0.37",
-    "ns-types": "0.0.30",
+    "ns-alerter": "0.0.2",
+    "ns-common": "0.0.15",
+    "ns-findata": "0.0.32",
+    "ns-manager": "0.0.48",
+    "ns-signal": "0.0.16",
+    "ns-store": "0.0.42",
+    "ns-types": "0.0.40",
     "numeral": "^2.0.6",
     "rimraf": "^2.6.2",
     "semver": "^5.4.1",
     "toml": "^2.3.3"
   },
   "devDependencies": {
+    "@types/bignumber.js": "^4.0.3",
     "@types/config": "0.0.33",
+    "@types/isomorphic-fetch": "0.0.34",
     "@types/mocha": "^2.2.41",
     "@types/moment": "^2.13.0",
     "@types/node": "^8.5.1",

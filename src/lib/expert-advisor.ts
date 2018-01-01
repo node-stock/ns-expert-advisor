@@ -3,12 +3,12 @@ import { DataProvider } from 'ns-findata';
 import { Signal, IKdjOutput } from 'ns-signal';
 import { SlackAlerter } from 'ns-alerter';
 import * as types from 'ns-types';
-import { SignalManager, AccountManager } from 'ns-manager';
+import { SignalManager, AccountManager, OrderManager, TransactionManager } from 'ns-manager';
 
 import * as assert from 'power-assert';
-import * as numeral from 'numeral';
 import * as moment from 'moment';
 import * as fetch from 'isomorphic-fetch';
+import { BigNumber } from 'BigNumber.js';
 const Loki = require('lokijs');
 const config = require('config');
 
@@ -27,7 +27,7 @@ export class ExpertAdvisor {
   coins: string[];
   accountId: string;
   coinId: string;
-  order: { [Attr: string]: any };
+  order: types.Order;
   backtest: {
     test: boolean,
     isLastDate: string,
@@ -38,7 +38,7 @@ export class ExpertAdvisor {
   signal: Signal;
   // 实时监测间隔
   interval: number;
-  worker: number;
+  worker: number = 0;
   dataProvider: DataProvider;
 
   constructor() {
@@ -56,12 +56,12 @@ export class ExpertAdvisor {
     this.coinId = config.account.coinId;
     this.signal = new Signal(config);
     this.dataProvider = new DataProvider(config.store);
-    this.order = {
+    this.order = <types.Order>{
       eventType: types.EventType.Order,
       tradeType: types.TradeType.Margin,
       orderType: types.OrderType.Limit,
       side: types.OrderSide.Buy,
-      amount: 100
+      amount: '100'
     }
   }
 
@@ -78,6 +78,8 @@ export class ExpertAdvisor {
 
   async onPretrade() {
     Log.system.info('预交易分析[启动]');
+    // 更新订单状态
+    await OrderManager.updateStatus();
     let signalList: IKdjOutput[] = [];
     let watchList: string[] = []
     if (this.coins && this.coins.length > 0) {
@@ -166,8 +168,10 @@ export class ExpertAdvisor {
       Log.system.error(`系统出错，未查询到用户(${accountId})信息。`);
       return;
     }
+    // 更新订单状态
+    await OrderManager.updateStatus();
     // 订单对象
-    const order = <types.LimitOrder>Object.assign({}, this.order, {
+    const order = <types.Order>Object.assign({}, this.order, {
       symbol: input.symbol,
       price: input.price,
     });
@@ -175,6 +179,7 @@ export class ExpertAdvisor {
     if (input.type === types.SymbolType.cryptocoin) {
       const res = Util.getTradeUnit(input.symbol);
       order.amount = res.amount;
+      // 交易类型：使用现金为undefined,使用比特币为btc
       tradeType = res.type;
     }
     if (this.backtest.test) {
@@ -182,11 +187,14 @@ export class ExpertAdvisor {
       order.mocktime = input.time;
     }
 
+    const signalPrice = new BigNumber(input.signal.price);
+    const currentPrice = new BigNumber(input.price);
+
     // 买入信号
     if (input.signal.side === types.OrderSide.Buy) {
       Log.system.info('买入信号');
       // 信号股价 < 当前股价(股价止跌上涨)
-      if (<number>input.signal.price < input.price) {
+      if (signalPrice.lessThan(currentPrice)) {
         Log.system.info(`买入信号出现后,${input.symbol}股价止跌上涨,买入处理[开始]`);
         order.side = input.signal.side;
         // 查询持仓
@@ -204,32 +212,44 @@ export class ExpertAdvisor {
           }
         }
 
-        // 订单价格
-        let balance = Number(account.balance);
-        const orderPrice = order.price * order.amount + Util.getFee(input.symbol);
-        if (tradeType === 'btc') {
-          Log.system.info('通过比特币购买');
-          balance = Number(account.bitcoin);
-        }
-        if (balance < orderPrice) {
-          Log.system.warn(`可用余额：${balance} < 订单价格：${orderPrice}，退出买入处理！`);
+        const balance = new BigNumber(account.balance);
+        const bitcoin = new BigNumber(account.bitcoin);
+        if (balance.isNegative()) {
+          Log.system.error(`余额异常(${account.balance})`);
           return;
+        }
+        if (bitcoin.isNegative()) {
+          Log.system.error(`余币异常(${account.bitcoin})`);
+          return;
+        }
+        // 订单价格
+        const orderPrice = new BigNumber(order.price)
+          .times(order.amount).plus(Util.getFee(input.symbol));
+        if (tradeType === types.AssetType.Btc) {
+          Log.system.info('通过比特币购买');
+          if (balance.lessThan(orderPrice)) {
+            Log.system.warn(`可用余额：${balance} < 订单价格：${orderPrice}，退出买入处理！`);
+            return;
+          }
+        } else {
+          if (bitcoin.lessThan(orderPrice)) {
+            Log.system.warn(`可用余币：${bitcoin} < 订单价格：${orderPrice}，退出买入处理！`);
+            return;
+          }
         }
         Log.system.info(`订单价格:${orderPrice}`);
         try {
-          // 买入
-          await this.postOrder(order);
+          // 下单买入
+          await this.postOrder(accountId, order);
           await SlackAlerter.sendTrade(order);
           Log.system.info(`发送买入指令`);
         } catch (e) {
           Log.system.warn('发送买入指令失败：', e.stack);
         }
-        // 记录交易信息
-        await TraderManager.set(accountId, order);
         // 消除信号
         await SignalManager.remove(input.signal.id);
         Log.system.info(`买入处理[终了]`);
-      } else if (<number>input.signal.price > input.price) { // 股价继续下跌
+      } else if (signalPrice.greaterThanOrEqualTo(currentPrice)) { // 股价继续下跌
         Log.system.info('更新买入信号股价', input.price);
         input.signal.price = input.price;
         // 记录当前股价
@@ -253,27 +273,35 @@ export class ExpertAdvisor {
         Log.system.error('持仓股价为空！');
         return;
       }
-      Log.system.info(`信号股价(${input.signal.price}) > 当前股价(${input.price}) && 盈利超过700(${input.price - position.price} > 7)`);
+      const posiPrice = new BigNumber(position.price);
+      const pip = currentPrice.minus(posiPrice);
+      Log.system.info(`信号股价(${signalPrice.toString()}) > 当前股价(${currentPrice.toString()})`);
+      if (position.type === types.SymbolType.stock) {
+        Log.system.info(` && 盈利超过700(${pip.toString}[当前价格(${currentPrice} - 持仓价格(${posiPrice})] > 7) `);
+      }
+      // 止盈规则
       const profitRule = input.type === types.SymbolType.cryptocoin ?
-        input.price > position.price : input.price - position.price > 7; // >= 1.1
+        currentPrice.greaterThan(posiPrice) : pip.greaterThan(new BigNumber(7)); // >= 1.1
       // 信号出现时股价 > 当前股价(股价下跌) && 并且盈利超过700（数字货币无此限制）
-      if (input.signal.price > input.price && profitRule) {
-        Log.system.info(`卖出信号出现后,${input.symbol}股价下跌,卖出处理[开始]`);
+      if (signalPrice.greaterThan(currentPrice) && profitRule) {
+        Log.system.info(`卖出信号出现后, ${input.symbol}股价下跌, 卖出处理[开始]`);
         try {
-          // 卖出
-          await this.postOrder(order);
-          const profit = (order.price * order.amount) - (input.price * order.amount)
-            - Util.getFee(input.symbol);
+          const orderPrice = new BigNumber(order.price);
+          const orderAmount = new BigNumber(order.amount);
+          const fee = Util.getFee(input.symbol);
+          // 下单卖出
+          await this.postOrder(accountId, order);
+          const profit = (orderPrice.times(orderAmount))
+            .minus(currentPrice.times(orderAmount))
+            .minus(fee);
           Log.system.info(`卖出利润：${profit}`);
-          await SlackAlerter.sendTrade(order, profit);
+          await SlackAlerter.sendTrade(order, profit.toNumber());
         } catch (e) {
           Log.system.warn('发送卖出请求失败：', e.stack);
         }
-        // 记录交易信息
-        await TraderManager.set(accountId, order);
         // 消除信号
         await SignalManager.remove(input.signal.id);
-      } else if (input.signal.price < input.price) { // 股价继续上涨
+      } else if (signalPrice.lessThan(currentPrice)) { // 股价继续上涨
         Log.system.info('更新卖出信号股价', input.price);
         input.signal.price = input.price;
         // 记录当前股价
@@ -283,11 +311,13 @@ export class ExpertAdvisor {
     Log.system.info('交易信号处理[终了]');
   }
 
-  async postOrder(order: types.Order): Promise<any> {
+  async postOrder(accountId: string, order: types.Order): Promise<any> {
+    // 调用下单API
     const requestOptions = {
       method: 'POST',
       headers: new Headers({ 'content-type': 'application/json' }),
       body: JSON.stringify({
+        accountId,
         orderInfo: order
       })
     };

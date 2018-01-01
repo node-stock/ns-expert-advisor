@@ -104,7 +104,7 @@ export class ExpertAdvisor {
         const signal = signalList[i];
         // kdj算出信号时
         if (signal && signal.side) {
-          await this.signalHandle(symbol, signal);
+          await this.signalHandle(symbol, signal, dbSignal);
         }
         // 数据库中已存储信号
         if (dbSignal) {
@@ -127,7 +127,7 @@ export class ExpertAdvisor {
   }
 
   // 信号处理
-  async signalHandle(symbol: string, signal: IKdjOutput) {
+  async signalHandle(symbol: string, signal: IKdjOutput, dbSignal: types.Model.Signal | null) {
     const modelSignal: types.Model.Signal = Object.assign({
       symbol,
       price: signal.lastPrice,
@@ -140,7 +140,6 @@ export class ExpertAdvisor {
     }
 
     // 更新信号
-    const dbSignal = await SignalManager.get(modelSignal);
     if (dbSignal) {
       Log.system.info(`查询出已存储信号(${JSON.stringify(dbSignal, null, 2)})`);
       const signalInterval = Date.now() - new Date(String(dbSignal.created_at)).getTime();

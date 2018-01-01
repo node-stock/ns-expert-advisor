@@ -40,41 +40,17 @@ const testOnPretrade = async () => {/*
 
 const testPostOrder = async () => {
   const order: types.LimitOrder = {
-    price: 2300,
+    price: '2300',
     symbol: '6664',
     orderType: types.OrderType.Limit,
     tradeType: types.TradeType.Margin,
+    symbolType: types.SymbolType.stock,
     side: types.OrderSide.Buy,
-    amount: 200,
-    eventType: types.EventType.Order
+    amount: '200',
+    eventType: types.EventType.Order,
+    backtest: '1'
   };
-  const res = await expertAdvisor.postOrder(order);
-  console.log(res.status)
-  assert(true);
-}
-
-const testPostOrderSlack = async () => {
-  const order: types.LimitOrder = {
-    price: 2300,
-    symbol: '6664',
-    orderType: types.OrderType.Limit,
-    tradeType: types.TradeType.Margin,
-    side: types.OrderSide.Buy,
-    amount: 200,
-    eventType: types.EventType.Order
-  };
-  const res = await expertAdvisor.postTradeSlack(order, 0);
-  console.log(res.status)
-  assert(true);
-}
-
-const testPostSlack = async () => {
-  const signal: types.Model.Signal = {
-    price: 0.00001234,
-    symbol: 'btc_jpy',
-    side: types.OrderSide.Buy
-  };
-  const res = await expertAdvisor.postSlack(signal);
+  const res = await expertAdvisor.postOrder('test', order);
   console.log(res.status)
   assert(true);
 }

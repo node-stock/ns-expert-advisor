@@ -54,6 +54,9 @@
   host = "127.0.0.1"
   # port
   port = 6060
+  # 只拥有交易状况查询权限
+  apiKey = "xx"
+  secret = "cccs"
 ###
 ### [strategies]
 ###
@@ -95,4 +98,4 @@
   database = 'ns-stock'
 
 [slack]
-  url = 'https://hooks.slack.com/'
+  url = 'https://hooks.slack.com/services/'

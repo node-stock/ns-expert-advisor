@@ -67,18 +67,18 @@ const testPostSlack = async () => {
 }
 
 const testTradingHandle = async () => {
-  const input: ITradingInput = {
+  /*const input: ITradingInput = {
     symbol: 'xrp_jpy',
     type: types.SymbolType.cryptocoin,
-    price: 87.24,
+    price: '87.24',
     time: 'test',
     signal: {
       side: types.OrderSide.Buy,
-      price: 86
+      price: '86'
     }
   };
   const res = await expertAdvisor.tradingHandle(input);
-  console.log(res);
+  console.log(res);*/
   assert(true);
 }
 // expertAdvisor.start();

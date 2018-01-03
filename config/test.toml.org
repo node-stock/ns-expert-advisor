@@ -86,6 +86,7 @@
 [ea]
   # 智能交易间隔（秒）
   interval = 3000
+  symbolType = ['cryptocoin']
   symbols = ["3667","5852","7777","6553", "6664"]
   coins = ["btc_jpy", "xrp_jpy", "ltc_btc", "eth_btc", "mona_jpy", "mona_btc", "bcc_jpy", "bcc_btc"]
 ###

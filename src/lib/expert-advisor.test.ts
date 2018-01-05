@@ -52,7 +52,7 @@ const testPostOrder = async () => {
     eventType: types.EventType.Order,
     backtest: '1'
   };
-  const res = await expertAdvisor.postOrder('test', order);
+  const res = await expertAdvisor.postOrder(order);
   console.log(res.status)
   assert(true);
 }

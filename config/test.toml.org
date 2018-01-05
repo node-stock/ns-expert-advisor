@@ -33,8 +33,9 @@
 ###
 ### 账户相关配置
 ###
+[[accounts]]
 # 乐天证券 
-[[accounts.rakuten]]
+[accounts.rakuten]
   # 实际券商账号
   id = "xxx6"
   # 登录密码
@@ -42,11 +43,11 @@
   # 支付密码
   otp = "xxxx"
 # bitbank.cc 
-[[accounts.bitbank]]
+[accounts.bitbank]
   # 账号
-  id = "xxx6"
-  apiKey = "xx"
-  secret = "cccs"
+  id = "stoc"
+  apiKey = "xxx"
+  secret = "cfa"
 ###
 ### [trader]
 ###

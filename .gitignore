@@ -62,3 +62,4 @@ config/development.toml
 .history
 .vscode
 config/test.toml
+src/lib/testdb.ts

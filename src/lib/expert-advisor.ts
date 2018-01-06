@@ -88,7 +88,7 @@ export class ExpertAdvisor {
   }
 
   async start() {
-    Log.system.info('启动智能交易应用...');
+    Log.system.info('启动智能交易程序...');
     await this.dataProvider.init();
     await SignalManager.removeAll();
     // await this.onPretrade();
@@ -104,8 +104,7 @@ export class ExpertAdvisor {
       let signalList: IKdjOutput[] = [];
       let watchList: string[] = []
       if (this.coins && this.coins.length > 0) {
-        signalList = signalList.concat(<IKdjOutput[]>await this.signal.kdj(
-          this.coins, types.SymbolType.cryptocoin, types.CandlestickUnit.Min5));
+        signalList = signalList.concat(await this.getKdjSignals(this.coins));
         watchList = this.coins;
       }
       if (this.watchStock && Util.isTradeTime() && this.symbols.length > 0) {
@@ -378,5 +377,17 @@ export class ExpertAdvisor {
     };
     const url = `http://${config.trader.host}:${config.trader.port}/api/v1/order`;
     return await fetch(url, requestOptions);
+  }
+
+  async getKdjSignals(symbols: string[]) {
+    let signals = <IKdjOutput[]>await this.signal.kdj(
+      symbols, types.SymbolType.cryptocoin, types.CandlestickUnit.Min5);
+    signals = signals.concat(<IKdjOutput[]>await this.signal.kdj(
+      symbols, types.SymbolType.cryptocoin, types.CandlestickUnit.Min30));
+    signals = signals.concat(<IKdjOutput[]>await this.signal.kdj(
+      symbols, types.SymbolType.cryptocoin, types.CandlestickUnit.Hour4));
+    signals = signals.concat(<IKdjOutput[]>await this.signal.kdj(
+      symbols, types.SymbolType.cryptocoin, types.CandlestickUnit.Day1));
+    return signals;
   }
 }

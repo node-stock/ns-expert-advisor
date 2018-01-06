@@ -20,23 +20,10 @@ export interface ITradingInput {
   signal: types.Signal;
 }
 
-export interface Account {
-  rakuten: {
-    id: string;
-    pass: string;
-    opt: string;
-  },
-  bitbank: {
-    id: string;
-    apiKey: string;
-    secret: string;
-  }
-}
-
 export class ExpertAdvisor {
   symbols: string[];
   coins: string[];
-  accounts: Account[];
+  accounts: types.ConfigAccount[];
   order: types.Order;
   backtest: {
     test: boolean,

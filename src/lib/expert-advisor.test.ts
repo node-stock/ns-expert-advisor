@@ -53,7 +53,7 @@ const testPostOrder = async () => {
     backtest: '1'
   };
   const res = await expertAdvisor.postOrder(order);
-  console.log(res.status)
+  console.log(res)
   assert(true);
 }
 

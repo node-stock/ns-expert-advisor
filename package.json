@@ -25,7 +25,7 @@
     "lokijs": "^1.5.1",
     "moment": "^2.19.3",
     "mysql2": "^1.5.1",
-    "ns-alerter": "0.0.7",
+    "ns-alerter": "0.0.9",
     "ns-common": "0.0.16",
     "ns-findata": "0.0.36",
     "ns-manager": "0.0.67",

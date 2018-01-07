@@ -96,7 +96,7 @@ export class ExpertAdvisor {
         // 查询数据库中的信号
         let dbSignals = <types.Signal[]>await SignalManager.getAll({ symbol });
         Log.system.info(`查询数据库中的信号:${JSON.stringify(dbSignals)}`);
-        // kdj算出信号时
+        // 返回kdj信号时
         if (signal && signal.results.length > 0) {
 
           const kdjOutputs = signal.results;

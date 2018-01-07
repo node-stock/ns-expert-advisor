@@ -40,7 +40,7 @@ const testOnPretrade = async () => {/*
 }
 
 const testPostOrder = async () => {
-  const order: types.LimitOrder = {
+  const order: types.Order = {
     account_id: 'test',
     price: '2300',
     symbol: '6664',

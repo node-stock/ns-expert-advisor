@@ -111,13 +111,13 @@ export class ExpertAdvisor {
               }
             }
             // 数据库中已存储信号
-            if (dbSignals.length > 0) {
+            if (dbSignals.length > 0 && kdjOutput.lastPrice && kdjOutput.lastTime) {
               // 交易处理
               await this.tradingHandle({
                 symbol,
                 symbolType: signal.symbolType,
-                price: String(kdjOutput.lastPrice),
-                time: String(kdjOutput.lastTime),
+                price: kdjOutput.lastPrice,
+                time: kdjOutput.lastTime,
                 signal: dbSignals[0]
               });
             }
@@ -171,7 +171,9 @@ export class ExpertAdvisor {
     }
 
     // 未存储信号 或者信号时间段不一致时
-    if (!dbSignal || (dbSignal && dbSignal.time !== kdjOutput.lastTime)) {
+    if (!dbSignal || (dbSignal
+      && dbSignal.time !== kdjOutput.lastTime
+      && dbSignal.timeframe === kdjOutput.timeframe)) {
       // 记录信号
       await SignalManager.set(modelSignal);
       Log.system.info(`推送信号警报：`, modelSignal);

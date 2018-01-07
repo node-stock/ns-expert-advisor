@@ -1,6 +1,6 @@
 import { Log, Util } from 'ns-common';
 import { DataProvider } from 'ns-findata';
-import { Signal, IKdjOutput } from 'ns-signal';
+import { Signal, IKdjSignal, IKdjOutput } from 'ns-signal';
 import { SlackAlerter } from 'ns-alerter';
 import * as types from 'ns-types';
 import { SignalManager, AccountManager, OrderManager, TransactionManager } from 'ns-manager';
@@ -21,7 +21,7 @@ export interface ITradingInput {
 }
 
 export class ExpertAdvisor {
-  symbols: string[];
+  symbols: string | string[];
   coins: string[];
   accounts: types.ConfigAccount[];
   order: types.Order;
@@ -84,71 +84,85 @@ export class ExpertAdvisor {
 
   async onPretrade() {
     try {
-
+      const { watchList, signalList } = await this.getSignalAndWatchList();
       Log.system.info('预交易分析[启动]');
       // 更新订单状态
       await OrderManager.updateStatus();
-      let signalList: IKdjOutput[] = [];
-      let watchList: string[] = []
-      if (this.coins && this.coins.length > 0) {
-        signalList = signalList.concat(await this.getKdjSignals(this.coins));
-        watchList = this.coins;
-      }
-      if (this.watchStock && Util.isTradeTime() && this.symbols.length > 0) {
-        watchList = watchList.concat(this.symbols)
-        Log.system.info('股市交易时间,查询股市信号');
-        signalList = signalList.concat(<IKdjOutput[]>await this.signal.kdj(
-          this.symbols, types.SymbolType.stock, types.CandlestickUnit.Min5));
-      }
       Log.system.info('监视列表：', watchList);
       let i = 0;
       for (const symbol of watchList) {
         Log.system.info(`处理商品：${symbol}`);
+        const signal = signalList.find((o: IKdjSignal) => o.symbol === symbol);
         // 查询数据库中的信号
         let dbSignals = <types.Signal[]>await SignalManager.getAll({ symbol });
         Log.system.info(`查询数据库中的信号:${JSON.stringify(dbSignals)}`);
-        try {
-          const signal = signalList[i];
-          // kdj算出信号时
-          if (signal && signal.side) {
-            const dbSignal = dbSignals.find(o => o.side === signal.side);
-            const isHandledSignal = await this.signalHandle(symbol, signal, dbSignal);
-            if (isHandledSignal) {
-              dbSignals = <types.Signal[]>await SignalManager.getAll({ symbol });
+        // kdj算出信号时
+        if (signal && signal.results.length > 0) {
+
+          const kdjOutputs = signal.results;
+          for (const kdjOutput of kdjOutputs) {
+            // 产生信号时，进行处理
+            if (kdjOutput.strategy && kdjOutput.strategy.side) {
+              const strategy = kdjOutput.strategy;
+              const dbSignal = dbSignals.find(o => o.side === strategy.side);
+              const isHandledSignal = await this.signalHandle(symbol, signal.symbolType, kdjOutput, dbSignal);
+              if (isHandledSignal) {
+                dbSignals = <types.Signal[]>await SignalManager.getAll({ symbol });
+              }
+            }
+            // 数据库中已存储信号
+            if (dbSignals.length > 0) {
+              // 交易处理
+              await this.tradingHandle({
+                symbol,
+                symbolType: signal.symbolType,
+                price: String(kdjOutput.lastPrice),
+                time: String(kdjOutput.lastTime),
+                signal: dbSignals[0]
+              });
             }
           }
-          // 数据库中已存储信号
-          if (dbSignals.length > 0) {
-            // 交易处理
-            await this.tradingHandle({
-              symbol,
-              symbolType: <types.SymbolType>signal.symbolType,
-              price: String(signal.lastPrice),
-              time: String(signal.lastTime),
-              signal: dbSignals[0]
-            });
-          }
-          i++;
-        } catch (err) {
-          Log.system.error(err.stack);
         }
       }
-
-      Log.system.info('预交易分析[终了]');
-    } catch (e) {
-      Log.system.error(e.stack);
+      i++;
+    } catch (err) {
+      Log.system.error(err.stack);
     }
+    Log.system.info('预交易分析[终了]');
+  }
+
+  async getSignalAndWatchList() {
+    Log.system.info('获取信号和监视列表[启动]');
+    let signalList: IKdjSignal[] = [];
+    let watchList: string[] = []
+    if (this.coins && this.coins.length > 0) {
+      signalList = await this.getKdjSignals(this.coins);
+      watchList = this.coins;
+    }
+    if (this.watchStock && Util.isTradeTime() && this.symbols.length > 0) {
+      watchList = watchList.concat(this.symbols)
+      Log.system.info('股市交易时间,查询股市信号');
+      signalList = signalList.concat(await this.signal.kdj(
+        this.symbols, types.SymbolType.stock, [types.CandlestickUnit.Min5]));
+    }
+    Log.system.info('获取信号和监视列表[终了]');
+    return { signalList, watchList }
   }
 
   // 信号处理
-  async signalHandle(symbol: string, signal: IKdjOutput, dbSignal?: types.Signal) {
+  async signalHandle(symbol: string, symbolType: string, kdjOutput: IKdjOutput, dbSignal?: types.Signal) {
+    Log.system.info('信号处理[启动]');
+    if (!kdjOutput.strategy) {
+      Log.system.error(`信号策略结果为${kdjOutput.strategy}，退出信号处理`);
+      return;
+    }
     const modelSignal: types.Model.Signal = Object.assign({
       symbol,
-      price: signal.lastPrice,
-      type: signal.symbolType,
-      time: signal.lastTime,
-      notes: `k值：${signal.k}`
-    }, signal, { side: String(signal.side) });
+      price: kdjOutput.lastPrice,
+      type: symbolType,
+      time: kdjOutput.lastTime,
+      notes: `k值：${kdjOutput.strategy.k}`
+    }, kdjOutput, { side: String(kdjOutput.strategy.side) });
     if (this.backtest.test) {
       modelSignal.backtest = '1';
       // modelSignal.mocktime = signal.lastTime;
@@ -157,14 +171,16 @@ export class ExpertAdvisor {
     }
 
     // 未存储信号 或者信号时间段不一致时
-    if (!dbSignal || (dbSignal && dbSignal.time !== signal.lastTime)) {
+    if (!dbSignal || (dbSignal && dbSignal.time !== kdjOutput.lastTime)) {
       // 记录信号
       await SignalManager.set(modelSignal);
       Log.system.info(`推送信号警报：`, modelSignal);
       // 推送信号警报
       await SlackAlerter.sendSignal(modelSignal);
+      Log.system.info('信号处理[终了]');
       return true;
     }
+    Log.system.info('信号处理[终了]');
     return false;
   }
 
@@ -353,7 +369,7 @@ export class ExpertAdvisor {
     Log.system.info('执行订单[终了]');
   }
 
-  async postOrder(order: types.Order): Promise<any> {
+  async postOrder(order: types.Order) {
     // 调用下单API
     const requestOptions = {
       method: 'POST',
@@ -363,18 +379,16 @@ export class ExpertAdvisor {
       })
     };
     const url = `http://${config.trader.host}:${config.trader.port}/api/v1/order`;
-    return await fetch(url, requestOptions);
+    await fetch(url, requestOptions);
   }
 
   async getKdjSignals(symbols: string[]) {
-    let signals = <IKdjOutput[]>await this.signal.kdj(
-      symbols, types.SymbolType.cryptocoin, types.CandlestickUnit.Min5);
-    signals = signals.concat(<IKdjOutput[]>await this.signal.kdj(
-      symbols, types.SymbolType.cryptocoin, types.CandlestickUnit.Min30));
-    signals = signals.concat(<IKdjOutput[]>await this.signal.kdj(
-      symbols, types.SymbolType.cryptocoin, types.CandlestickUnit.Hour4));
-    signals = signals.concat(<IKdjOutput[]>await this.signal.kdj(
-      symbols, types.SymbolType.cryptocoin, types.CandlestickUnit.Day1));
-    return signals;
+    const units = [
+      types.CandlestickUnit.Min5,
+      types.CandlestickUnit.Min30,
+      types.CandlestickUnit.Hour1,
+      types.CandlestickUnit.Hour4
+    ];
+    return await this.signal.kdj(symbols, types.SymbolType.cryptocoin, units);
   }
 }
